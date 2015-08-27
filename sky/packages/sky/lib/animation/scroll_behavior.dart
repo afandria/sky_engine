@@ -7,6 +7,7 @@ import 'dart:math' as math;
 import 'package:newton/newton.dart';
 
 const double _kSecondsPerMillisecond = 1000.0;
+const double _kScrollDrag = 0.025;
 
 abstract class ScrollBehavior {
   Simulation release(double position, double velocity) => null;
@@ -15,34 +16,61 @@ abstract class ScrollBehavior {
   double applyCurve(double scrollOffset, double scrollDelta);
 }
 
-class BoundedBehavior extends ScrollBehavior {
-  BoundedBehavior({ double contentsSize: 0.0, double containerSize: 0.0 })
-    : _contentsSize = contentsSize,
-      _containerSize = containerSize;
+abstract class ExtentScrollBehavior extends ScrollBehavior {
+  ExtentScrollBehavior({ double contentExtent: 0.0, double containerExtent: 0.0 })
+    : _contentExtent = contentExtent, _containerExtent = containerExtent;
 
-  double _contentsSize;
-  double get contentsSize => _contentsSize;
-  void set contentsSize (double value) {
-    if (_contentsSize != value) {
-      _contentsSize = value;
-      // TODO(ianh) now what? what if we have a simulation ongoing?
-    }
+  double _contentExtent;
+  double get contentExtent => _contentExtent;
+
+  double _containerExtent;
+  double get containerExtent => _containerExtent;
+
+  /// Returns the new scrollOffset.
+  double updateExtents({
+    double contentExtent,
+    double containerExtent,
+    double scrollOffset: 0.0
+  }) {
+    if (contentExtent != null)
+      _contentExtent = contentExtent;
+    if (containerExtent != null)
+      _containerExtent = containerExtent;
+    return scrollOffset.clamp(minScrollOffset, maxScrollOffset);
   }
 
-  double _containerSize;
-  double get containerSize => _containerSize;
-  void set containerSize (double value) {
-    if (_containerSize != value) {
-      _containerSize = value;
-      // TODO(ianh) now what? what if we have a simulation ongoing?
-    }
-  }
+  double get minScrollOffset;
+  double get maxScrollOffset;
+}
 
-  final double minScrollOffset = 0.0;
-  double get maxScrollOffset => math.max(0.0, _contentsSize - _containerSize);
+class BoundedBehavior extends ExtentScrollBehavior {
+  BoundedBehavior({ double contentExtent: 0.0, double containerExtent: 0.0 })
+    : super(contentExtent: contentExtent, containerExtent: containerExtent);
+
+  double minScrollOffset = 0.0;
+  double get maxScrollOffset => math.max(minScrollOffset, minScrollOffset + _contentExtent - _containerExtent);
 
   double applyCurve(double scrollOffset, double scrollDelta) {
-    return (scrollOffset + scrollDelta).clamp(0.0, maxScrollOffset);
+    return (scrollOffset + scrollDelta).clamp(minScrollOffset, maxScrollOffset);
+  }
+}
+
+class UnboundedBehavior extends ExtentScrollBehavior {
+  UnboundedBehavior({ double contentExtent: 0.0, double containerExtent: 0.0 })
+    : super(contentExtent: contentExtent, containerExtent: containerExtent);
+
+  Simulation release(double position, double velocity) {
+    double velocityPerSecond = velocity * 1000.0;
+    return new BoundedFrictionSimulation(
+      _kScrollDrag, position, velocityPerSecond, double.NEGATIVE_INFINITY, double.INFINITY
+    );
+  }
+
+  double get minScrollOffset => double.NEGATIVE_INFINITY;
+  double get maxScrollOffset => double.INFINITY;
+
+  double applyCurve(double scrollOffset, double scrollDelta) {
+    return scrollOffset + scrollDelta;
   }
 }
 
@@ -50,13 +78,12 @@ Simulation createDefaultScrollSimulation(double position, double velocity, doubl
   double velocityPerSecond = velocity * _kSecondsPerMillisecond;
   SpringDescription spring = new SpringDescription.withDampingRatio(
       mass: 1.0, springConstant: 170.0, ratio: 1.1);
-  double drag = 0.025;
-  return new ScrollSimulation(position, velocityPerSecond, minScrollOffset, maxScrollOffset, spring, drag);
+  return new ScrollSimulation(position, velocityPerSecond, minScrollOffset, maxScrollOffset, spring, _kScrollDrag);
 }
 
 class OverscrollBehavior extends BoundedBehavior {
-  OverscrollBehavior({ double contentsSize: 0.0, double containerSize: 0.0 })
-    : super(contentsSize: contentsSize, containerSize: containerSize);
+  OverscrollBehavior({ double contentExtent: 0.0, double containerExtent: 0.0 })
+    : super(contentExtent: contentExtent, containerExtent: containerExtent);
 
   Simulation release(double position, double velocity) {
     return createDefaultScrollSimulation(position, velocity, minScrollOffset, maxScrollOffset);
@@ -80,7 +107,7 @@ class OverscrollBehavior extends BoundedBehavior {
 }
 
 class OverscrollWhenScrollableBehavior extends OverscrollBehavior {
-  bool get isScrollable => contentsSize > containerSize;
+  bool get isScrollable => contentExtent > containerExtent;
 
   Simulation release(double position, double velocity) {
     if (isScrollable || position < minScrollOffset || position > maxScrollOffset)

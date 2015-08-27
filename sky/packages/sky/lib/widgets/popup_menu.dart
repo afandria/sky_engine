@@ -58,7 +58,7 @@ class PopupMenu extends StatefulComponent {
       _open();
   }
 
-  void syncFields(PopupMenu source) {
+  void syncConstructorArguments(PopupMenu source) {
     if (!showing && source.showing)
       _open();
     showing = source.showing;
@@ -142,7 +142,7 @@ class PopupMenu extends StatefulComponent {
                         horizontal: _kMenuHorizontalPadding,
                         vertical: _kMenuVerticalPadding
                       ),
-                      child: new Block(children)
+                      child: new BlockBody(children)
                     )
                   )
                 )

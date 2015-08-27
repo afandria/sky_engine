@@ -18,7 +18,7 @@ class StockSettings extends StatefulComponent {
   BackupMode backup;
   SettingsUpdater updater;
 
-  void syncFields(StockSettings source) {
+  void syncConstructorArguments(StockSettings source) {
     navigator = source.navigator;
     optimism = source.optimism;
     backup = source.backup;
@@ -98,22 +98,22 @@ class StockSettings extends StatefulComponent {
       child: new ScrollableViewport(
         child: new Container(
           padding: const EdgeDims.symmetric(vertical: 20.0),
-          child: new Block([
+          child: new BlockBody([
             new DrawerItem(
               icon: 'action/thumb_up',
               onPressed: () => _confirmOptimismChange(),
-              children: [
+              child: new Row([
                 new Flexible(child: new Text('Everything is awesome')),
-                new Checkbox(value: optimism == StockMode.optimistic, onChanged: (_) => _confirmOptimismChange())
-              ]
+                new Checkbox(value: optimism == StockMode.optimistic, onChanged: (_) => _confirmOptimismChange()),
+              ])
             ),
             new DrawerItem(
               icon: 'action/backup',
               onPressed: () { _handleBackupChanged(!(backup == BackupMode.enabled)); },
-              children: [
+              child: new Row([
                 new Flexible(child: new Text('Back up stock list to the cloud')),
-                new Switch(value: backup == BackupMode.enabled, onChanged: _handleBackupChanged)
-              ]
+                new Switch(value: backup == BackupMode.enabled, onChanged: _handleBackupChanged),
+              ])
             ),
           ])
         )

@@ -4,6 +4,8 @@
 
 import 'dart:async';
 
+import 'package:sky/animation/animated_value.dart';
+import 'package:sky/animation/curves.dart';
 import 'package:sky/theme/colors.dart' as colors;
 import 'package:sky/widgets/basic.dart';
 import 'package:sky/widgets/default_text_style.dart';
@@ -12,6 +14,7 @@ import 'package:sky/widgets/material.dart';
 import 'package:sky/widgets/navigator.dart';
 import 'package:sky/widgets/scrollable.dart';
 import 'package:sky/widgets/theme.dart';
+import 'package:sky/widgets/transitions.dart';
 
 typedef Widget DialogBuilder(Navigator navigator);
 
@@ -22,7 +25,9 @@ class Dialog extends Component {
   Dialog({
     Key key,
     this.title,
+    this.titlePadding,
     this.content,
+    this.contentPadding,
     this.actions,
     this.onDismiss
   }): super(key: key);
@@ -31,9 +36,16 @@ class Dialog extends Component {
   /// of the dialog.
   final Widget title;
 
+  // Padding around the title; uses material design default if none is supplied
+  // If there is no title, no padding will be provided
+  final EdgeDims titlePadding;
+
   /// The (optional) content of the dialog is displayed in the center of the
   /// dialog in a lighter font.
   final Widget content;
+
+  // Padding around the content; uses material design default if none is supplied
+  final EdgeDims contentPadding;
 
   /// The (optional) set of actions that are displayed at the bottom of the
   /// dialog.
@@ -56,8 +68,11 @@ class Dialog extends Component {
     List<Widget> dialogBody = new List<Widget>();
 
     if (title != null) {
+      EdgeDims padding = titlePadding;
+      if (padding == null)
+        padding = new EdgeDims(24.0, 24.0, content == null ? 20.0 : 0.0, 24.0);
       dialogBody.add(new Padding(
-        padding: new EdgeDims(24.0, 24.0, content == null ? 20.0 : 0.0, 24.0),
+        padding: padding,
         child: new DefaultTextStyle(
           style: Theme.of(this).text.title,
           child: title
@@ -66,8 +81,11 @@ class Dialog extends Component {
     }
 
     if (content != null) {
+      EdgeDims padding = contentPadding;
+      if (padding == null)
+        padding = const EdgeDims(20.0, 24.0, 24.0, 24.0);
       dialogBody.add(new Padding(
-        padding: const EdgeDims(20.0, 24.0, 24.0, 24.0),
+        padding: padding,
         child: new DefaultTextStyle(
           style: Theme.of(this).text.subhead,
           child: content
@@ -76,7 +94,11 @@ class Dialog extends Component {
     }
 
     if (actions != null)
-      dialogBody.add(new Flex(actions, justifyContent: FlexJustifyContent.end));
+      dialogBody.add(new Container(
+        child: new Row(actions,
+          justifyContent: FlexJustifyContent.end
+        )
+      ));
 
     return new Stack([
       new Listener(
@@ -96,7 +118,7 @@ class Dialog extends Component {
               level: 4,
               color: _color,
               child: new ShrinkWrapWidth(
-                child: new ScrollableBlock(dialogBody)
+                child: new Block(dialogBody)
               )
             )
           )
@@ -104,6 +126,47 @@ class Dialog extends Component {
       )
     ]);
 
+  }
+}
+
+class DialogRoute extends RouteBase {
+  DialogRoute({ this.completer, this.builder });
+
+  final Completer completer;
+  final RouteBuilder builder;
+
+  Widget build(Navigator navigator, RouteBase route) => builder(navigator, route);
+  bool get isOpaque => false;
+
+  void popState([dynamic result]) {
+    completer.complete(result);
+  }
+
+  TransitionBase buildTransition({ Key key }) => new DialogTransition(key: key);
+}
+
+const Duration _kTransitionDuration = const Duration(milliseconds: 150);
+class DialogTransition extends TransitionBase {
+  DialogTransition({
+    Key key,
+    Widget child,
+    Direction direction,
+    Function onDismissed,
+    Function onCompleted
+  }): super(key: key,
+            child: child,
+            duration: _kTransitionDuration,
+            direction: direction,
+            onDismissed: onDismissed,
+            onCompleted: onCompleted);
+
+  Widget buildWithChild(Widget child) {
+    return new FadeTransition(
+      performance: performance,
+      direction: direction,
+      opacity: new AnimatedValue<double>(0.0, end: 1.0, curve: easeOut),
+      child: child
+    );
   }
 }
 

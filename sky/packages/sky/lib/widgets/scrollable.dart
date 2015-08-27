@@ -2,29 +2,30 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:sky' as sky;
 
 import 'package:newton/newton.dart';
 import 'package:sky/animation/animated_simulation.dart';
 import 'package:sky/animation/animation_performance.dart';
+import 'package:sky/animation/animated_value.dart';
+import 'package:sky/animation/curves.dart';
 import 'package:sky/animation/scroll_behavior.dart';
 import 'package:sky/rendering/box.dart';
+import 'package:sky/rendering/viewport.dart';
 import 'package:sky/theme/view_configuration.dart' as config;
 import 'package:sky/widgets/basic.dart';
-import 'package:sky/widgets/block_viewport.dart';
-import 'package:sky/widgets/scrollable.dart';
 import 'package:sky/widgets/framework.dart';
+import 'package:sky/widgets/mixed_viewport.dart';
+import 'package:sky/widgets/scrollable.dart';
 
-export 'package:sky/widgets/block_viewport.dart' show BlockViewportLayoutState;
+export 'package:sky/widgets/mixed_viewport.dart' show MixedViewportLayoutState;
 
+// The GestureEvent velocity properties are pixels/second, config min,max limits are pixels/ms
 const double _kMillisecondsPerSecond = 1000.0;
-
-double _velocityForFlingGesture(double eventVelocity) {
-  // eventVelocity is pixels/second, config min,max limits are pixels/ms
-  return eventVelocity.clamp(-config.kMaxFlingVelocity, config.kMaxFlingVelocity) /
-    _kMillisecondsPerSecond;
-}
+const double _kMinFlingVelocity = -config.kMaxFlingVelocity * _kMillisecondsPerSecond;
+const double _kMaxFlingVelocity = config.kMaxFlingVelocity * _kMillisecondsPerSecond;
 
 typedef void ScrollListener();
 
@@ -34,23 +35,32 @@ abstract class Scrollable extends StatefulComponent {
 
   Scrollable({
     Key key,
+    this.initialScrollOffset,
     this.scrollDirection: ScrollDirection.vertical
   }) : super(key: key) {
     assert(scrollDirection == ScrollDirection.vertical ||
-        scrollDirection == ScrollDirection.horizontal);
+           scrollDirection == ScrollDirection.horizontal);
   }
 
+  double initialScrollOffset;
   ScrollDirection scrollDirection;
 
   AnimatedSimulation _toEndAnimation; // See _startToEndAnimation()
   ValueAnimation<double> _toOffsetAnimation; // Started by scrollTo()
 
   void initState() {
-    _toEndAnimation = new AnimatedSimulation(_tickScrollOffset);
+    if (initialScrollOffset is double)
+      _scrollOffset = initialScrollOffset;
+    _toEndAnimation = new AnimatedSimulation(_setScrollOffset);
+    _toOffsetAnimation = new ValueAnimation<double>()
+      ..addListener(() {
+        AnimatedValue<double> offset = _toOffsetAnimation.variable;
+        _setScrollOffset(offset.value);
+      });
   }
 
-  void syncFields(Scrollable source) {
-    scrollDirection == source.scrollDirection;
+  void syncConstructorArguments(Scrollable source) {
+    scrollDirection = source.scrollDirection;
   }
 
   double _scrollOffset = 0.0;
@@ -85,92 +95,79 @@ abstract class Scrollable extends StatefulComponent {
     );
   }
 
-  void _startToOffsetAnimation(double newScrollOffset, ValueAnimation<double> animation) {
-    _stopToEndAnimation();
-    _stopToOffsetAnimation();
-
-    animation.variable
-      ..begin = scrollOffset
-      ..end = newScrollOffset;
-
-    _toOffsetAnimation = animation
+  Future _startToOffsetAnimation(double newScrollOffset, Duration duration, Curve curve) {
+    _stopAnimations();
+    _toOffsetAnimation
+      ..variable = new AnimatedValue<double>(scrollOffset,
+        end: newScrollOffset,
+        curve: curve
+      )
       ..progress = 0.0
-      ..addListener(_updateToOffsetAnimation)
-      ..addStatusListener(_updateToOffsetAnimationStatus)
-      ..play();
+      ..duration = duration;
+    return _toOffsetAnimation.play();
   }
 
-  void _updateToOffsetAnimation() {
-    scrollTo(_toOffsetAnimation.value);
-  }
-
-  void _updateToOffsetAnimationStatus(AnimationStatus status) {
-    if (status == AnimationStatus.dismissed || status == AnimationStatus.completed)
-      _stopToOffsetAnimation();
-  }
-
-  void _stopToOffsetAnimation() {
-    if (_toOffsetAnimation != null) {
-      _toOffsetAnimation
-        ..removeStatusListener(_updateToOffsetAnimationStatus)
-        ..removeListener(_updateToOffsetAnimation)
-        ..stop();
-      _toOffsetAnimation = null;
-    }
+  void _stopAnimations() {
+    if (_toOffsetAnimation.isAnimating)
+      _toOffsetAnimation.stop();
+    if (_toEndAnimation.isAnimating)
+      _toEndAnimation.stop();
   }
 
   void _startToEndAnimation({ double velocity: 0.0 }) {
-    _stopToEndAnimation();
-    _stopToOffsetAnimation();
+    _stopAnimations();
     Simulation simulation = scrollBehavior.release(scrollOffset, velocity);
     if (simulation != null)
       _toEndAnimation.start(simulation);
   }
 
-  void _stopToEndAnimation() {
-    _toEndAnimation.stop();
-  }
-
   void didUnmount() {
-    _stopToEndAnimation();
-    _stopToOffsetAnimation();
+    _stopAnimations();
     super.didUnmount();
   }
 
-  bool scrollTo(double newScrollOffset, { ValueAnimation<double> animation }) {
-    if (newScrollOffset == _scrollOffset)
-      return false;
-
-    if (animation == null) {
-      setState(() {
-        _scrollOffset = newScrollOffset;
-      });
-    } else {
-      _startToOffsetAnimation(newScrollOffset, animation);
-    }
-
+  void _setScrollOffset(double newScrollOffset) {
+    if (_scrollOffset == newScrollOffset)
+      return;
+    setState(() {
+      _scrollOffset = newScrollOffset;
+    });
     if (_listeners.length > 0)
       _notifyListeners();
-
-    return true;
   }
 
-  bool scrollBy(double scrollDelta) {
+  Future scrollTo(double newScrollOffset, { Duration duration, Curve curve: ease }) {
+    if (newScrollOffset == _scrollOffset)
+      return new Future.value();
+
+    if (duration == null) {
+      _stopAnimations();
+      _setScrollOffset(newScrollOffset);
+      return new Future.value();
+    }
+
+    return _startToOffsetAnimation(newScrollOffset, duration, curve);
+  }
+
+  Future scrollBy(double scrollDelta, { Duration duration, Curve curve }) {
     double newScrollOffset = scrollBehavior.applyCurve(_scrollOffset, scrollDelta);
-    return scrollTo(newScrollOffset);
+    return scrollTo(newScrollOffset, duration: duration, curve: curve);
   }
 
   void settleScrollOffset() {
     _startToEndAnimation();
   }
 
-  void _tickScrollOffset(double value) {
-    scrollTo(value);
+  // Return the event's velocity in pixels/second.
+  double _eventVelocity(sky.GestureEvent event) {
+    double velocity = scrollDirection == ScrollDirection.horizontal
+      ? -event.velocityX
+      : -event.velocityY;
+    return velocity.clamp(_kMinFlingVelocity, _kMaxFlingVelocity) / _kMillisecondsPerSecond;
   }
 
   EventDisposition _handlePointerDown(_) {
-    _stopToEndAnimation();
-    _stopToOffsetAnimation();
+    _stopAnimations();
     return EventDisposition.processed;
   }
 
@@ -180,10 +177,7 @@ abstract class Scrollable extends StatefulComponent {
   }
 
   EventDisposition _handleFlingStart(sky.GestureEvent event) {
-    double eventVelocity = scrollDirection == ScrollDirection.horizontal
-      ? -event.velocityX
-      : -event.velocityY;
-    _startToEndAnimation(velocity: _velocityForFlingGesture(eventVelocity));
+    _startToEndAnimation(velocity: _eventVelocity(event));
     return EventDisposition.processed;
   }
 
@@ -231,13 +225,13 @@ Scrollable findScrollableAncestor({ Widget target }) {
   return ancestor;
 }
 
-bool ensureWidgetIsVisible(Widget target, { ValueAnimation<double> animation }) {
+Future ensureWidgetIsVisible(Widget target, { Duration duration, Curve curve }) {
   assert(target.mounted);
   assert(target.renderObject is RenderBox);
 
   Scrollable scrollable = findScrollableAncestor(target: target);
   if (scrollable == null)
-    return false;
+    return new Future.value();
 
   Size targetSize = (target.renderObject as RenderBox).size;
   Point targetCenter = target.localToGlobal(
@@ -255,16 +249,14 @@ bool ensureWidgetIsVisible(Widget target, { ValueAnimation<double> animation }) 
   double scrollOffsetDelta = scrollable.scrollDirection == ScrollDirection.vertical
     ? targetCenter.y - scrollableCenter.y
     : targetCenter.x - scrollableCenter.x;
-  BoundedBehavior scrollBehavior = scrollable.scrollBehavior;
+  ExtentScrollBehavior scrollBehavior = scrollable.scrollBehavior;
   double scrollOffset = (scrollable.scrollOffset + scrollOffsetDelta)
     .clamp(scrollBehavior.minScrollOffset, scrollBehavior.maxScrollOffset);
 
-  if (scrollOffset != scrollable.scrollOffset) {
-    scrollable.scrollTo(scrollOffset, animation: animation);
-    return true;
-  }
+  if (scrollOffset != scrollable.scrollOffset)
+    return scrollable.scrollTo(scrollOffset, duration: duration, curve: curve);
 
-  return false;
+  return new Future.value();
 }
 
 /// A simple scrollable widget that has a single child. Use this component if
@@ -273,14 +265,19 @@ class ScrollableViewport extends Scrollable {
   ScrollableViewport({
     Key key,
     this.child,
+    double initialScrollOffset,
     ScrollDirection scrollDirection: ScrollDirection.vertical
-  }) : super(key: key, scrollDirection: scrollDirection);
+  }) : super(
+    key: key,
+    scrollDirection: scrollDirection,
+    initialScrollOffset: initialScrollOffset
+  );
 
   Widget child;
 
-  void syncFields(ScrollableViewport source) {
+  void syncConstructorArguments(ScrollableViewport source) {
     child = source.child;
-    super.syncFields(source);
+    super.syncConstructorArguments(source);
   }
 
   ScrollBehavior createScrollBehavior() => new OverscrollWhenScrollableBehavior();
@@ -297,10 +294,10 @@ class ScrollableViewport extends Scrollable {
     _updateScrollBehaviour();
   }
   void _updateScrollBehaviour() {
-    scrollBehavior.contentsSize = _childSize;
-    scrollBehavior.containerSize = _viewportSize;
-    if (scrollOffset > scrollBehavior.maxScrollOffset)
-      settleScrollOffset();
+    scrollTo(scrollBehavior.updateExtents(
+      contentExtent: _childSize,
+      containerExtent: _viewportSize,
+      scrollOffset: scrollOffset));
   }
 
   Widget buildContent() {
@@ -318,16 +315,18 @@ class ScrollableViewport extends Scrollable {
   }
 }
 
-/// A mashup of [ScrollableViewport] and [Block]. Useful when you have a small,
+/// A mashup of [ScrollableViewport] and [BlockBody]. Useful when you have a small,
 /// fixed number of children that you wish to arrange in a block layout and that
 /// might exceed the height of its container (and therefore need to scroll).
-class ScrollableBlock extends Component {
-  ScrollableBlock(this.children, {
+class Block extends Component {
+  Block(this.children, {
     Key key,
+    this.initialScrollOffset,
     this.scrollDirection: ScrollDirection.vertical
   }) : super(key: key);
 
   final List<Widget> children;
+  final double initialScrollOffset;
   final ScrollDirection scrollDirection;
 
   BlockDirection get _direction {
@@ -338,103 +337,153 @@ class ScrollableBlock extends Component {
 
   Widget build() {
     return new ScrollableViewport(
+      initialScrollOffset: initialScrollOffset,
       scrollDirection: scrollDirection,
-      child: new Block(children, direction: _direction)
+      child: new BlockBody(children, direction: _direction)
     );
   }
 }
 
 /// An optimized scrollable widget for a large number of children that are all
-/// of the same height. Use this widget when you have a large number of children
-/// or when you are concerned about offscreen widgets consuming resources.
-abstract class FixedHeightScrollable extends Scrollable {
-
-  FixedHeightScrollable({ Key key, this.itemHeight, this.padding })
-      : super(key: key) {
-    assert(itemHeight != null);
+/// the same size (extent) in the scrollDirection. For example for
+/// ScrollDirection.vertical itemExtent is the height of each item. Use this
+/// widget when you have a large number of children or when you are concerned
+// about offscreen widgets consuming resources.
+abstract class ScrollableWidgetList extends Scrollable {
+  ScrollableWidgetList({
+    Key key,
+    double initialScrollOffset,
+    ScrollDirection scrollDirection: ScrollDirection.vertical,
+    this.itemExtent,
+    this.padding
+  }) : super(key: key, initialScrollOffset: initialScrollOffset, scrollDirection: scrollDirection) {
+    assert(itemExtent != null);
   }
 
   EdgeDims padding;
-  double itemHeight;
+  double itemExtent;
+  Size containerSize = Size.zero;
 
-  /// Subclasses must implement `get itemCount` to tell FixedHeightScrollable
+  /// Subclasses must implement `get itemCount` to tell ScrollableWidgetList
   /// how many items there are in the list.
   int get itemCount;
   int _previousItemCount;
 
-  void syncFields(FixedHeightScrollable source) {
+  void syncConstructorArguments(ScrollableWidgetList source) {
+    bool scrollBehaviorUpdateNeeded =
+      padding != source.padding ||
+      itemExtent != source.itemExtent ||
+      scrollDirection != source.scrollDirection;
+
     padding = source.padding;
-    itemHeight = source.itemHeight;
-    super.syncFields(source);
+    itemExtent = source.itemExtent;
+    super.syncConstructorArguments(source); // update scrollDirection
+
+    if (itemCount != _previousItemCount) {
+      scrollBehaviorUpdateNeeded = true;
+      _previousItemCount = itemCount;
+    }
+
+    if (scrollBehaviorUpdateNeeded)
+      _updateScrollBehavior();
   }
 
   ScrollBehavior createScrollBehavior() => new OverscrollBehavior();
-  OverscrollBehavior get scrollBehavior => super.scrollBehavior;
+  ExtentScrollBehavior get scrollBehavior => super.scrollBehavior;
 
-  double _height;
+  double get _containerExtent {
+    return scrollDirection == ScrollDirection.vertical
+      ? containerSize.height
+      : containerSize.width;
+  }
+
   void _handleSizeChanged(Size newSize) {
     setState(() {
-      _height = newSize.height;
-      scrollBehavior.containerSize = _height;
+      containerSize = newSize;
+      _updateScrollBehavior();
     });
   }
 
-  void _updateContentsHeight() {
-    double contentsHeight = itemHeight * itemCount;
-    if (padding != null)
-      contentsHeight += padding.top + padding.bottom;
-    scrollBehavior.contentsSize = contentsHeight;
+  double get _leadingPadding {
+    if (scrollDirection == ScrollDirection.vertical)
+      return padding != null ? padding.top : 0.0;
+    return padding != null ? padding.left : -.0;
   }
 
-  void _updateScrollOffset() {
-    if (scrollOffset > scrollBehavior.maxScrollOffset)
-      settleScrollOffset();
+  double get _trailingPadding {
+    if (scrollDirection == ScrollDirection.vertical)
+      return padding != null ? padding.bottom : 0.0;
+    return padding != null ? padding.right : 0.0;
+  }
+
+  EdgeDims get _crossAxisPadding {
+    if (padding == null)
+      return null;
+    if (scrollDirection == ScrollDirection.vertical)
+      return new EdgeDims.only(left: padding.left, right: padding.right);
+    return new EdgeDims.only(top: padding.top, bottom: padding.bottom);
+  }
+
+  void _updateScrollBehavior() {
+    double contentExtent = itemExtent * itemCount;
+    if (padding != null)
+      contentExtent += _leadingPadding + _trailingPadding;
+
+    scrollTo(scrollBehavior.updateExtents(
+      contentExtent: contentExtent,
+      containerExtent: _containerExtent,
+      scrollOffset: scrollOffset));
+  }
+
+  Offset _toOffset(double value) {
+    return scrollDirection == ScrollDirection.vertical
+      ? new Offset(0.0, value)
+      : new Offset(value, 0.0);
   }
 
   Widget buildContent() {
     if (itemCount != _previousItemCount) {
       _previousItemCount = itemCount;
-      _updateContentsHeight();
-      _updateScrollOffset();
+      _updateScrollBehavior();
     }
 
+    double paddedScrollOffset = scrollOffset - _leadingPadding;
     int itemShowIndex = 0;
     int itemShowCount = 0;
-    double offsetY = 0.0;
-    if (_height != null && _height > 0.0) {
-      if (scrollOffset < 0.0) {
-        double visibleHeight = _height + scrollOffset;
-        itemShowCount = (visibleHeight / itemHeight).round() + 1;
-        offsetY = scrollOffset;
+    Offset viewportOffset = Offset.zero;
+
+    if (_containerExtent != null && _containerExtent > 0.0 && itemCount > 0) {
+      if (paddedScrollOffset < scrollBehavior.minScrollOffset) {
+        // Underscroll
+        double visibleExtent = _containerExtent + paddedScrollOffset;
+        itemShowCount = (visibleExtent / itemExtent).ceil();
+        viewportOffset = _toOffset(paddedScrollOffset);
       } else {
-        itemShowCount = (_height / itemHeight).ceil();
-        double alignmentDelta = -scrollOffset % itemHeight;
-        double drawStart;
-        if (alignmentDelta != 0.0) {
-          alignmentDelta -= itemHeight;
-          itemShowCount += 1;
-          drawStart = scrollOffset + alignmentDelta;
-          offsetY = -alignmentDelta;
-        } else {
-          drawStart = scrollOffset;
-        }
-        itemShowIndex = math.max(0, (drawStart / itemHeight).floor());
+        itemShowCount = (_containerExtent / itemExtent).ceil() + 1;
+        itemShowIndex = (paddedScrollOffset / itemExtent).floor();
+        viewportOffset = _toOffset(paddedScrollOffset - itemShowIndex * itemExtent);
+        itemShowIndex %= itemCount; // Wrap index for when itemWrap is true.
       }
     }
 
     List<Widget> items = buildItems(itemShowIndex, itemShowCount);
     assert(items.every((item) => item.key != null));
 
+    BlockDirection blockDirection = scrollDirection == ScrollDirection.vertical
+      ? BlockDirection.vertical
+      : BlockDirection.horizontal;
+
     // TODO(ianh): Refactor this so that it does the building in the
-    // same frame as the size observing, similar to BlockViewport, but
+    // same frame as the size observing, similar to MixedViewport, but
     // keeping the fixed-height optimisations.
     return new SizeObserver(
       callback: _handleSizeChanged,
       child: new Viewport(
-        scrollOffset: new Offset(0.0, offsetY),
+        scrollDirection: scrollDirection,
+        scrollOffset: viewportOffset,
         child: new Container(
-          padding: padding,
-          child: new Block(items)
+          padding: _crossAxisPadding,
+          child: new BlockBody(items, direction: blockDirection)
         )
       )
     );
@@ -446,59 +495,134 @@ abstract class FixedHeightScrollable extends Scrollable {
 
 typedef Widget ItemBuilder<T>(T item);
 
-/// A wrapper around [FixedHeightScrollable] that helps you translate a list of
+/// A wrapper around [ScrollableWidgetList] that helps you translate a list of
 /// model objects into a scrollable list of widgets. Assumes all the widgets
 /// have the same height.
-class ScrollableList<T> extends FixedHeightScrollable {
+class ScrollableList<T> extends ScrollableWidgetList {
   ScrollableList({
     Key key,
+    double initialScrollOffset,
+    ScrollDirection scrollDirection: ScrollDirection.vertical,
     this.items,
     this.itemBuilder,
-    double itemHeight,
+    this.itemsWrap: false,
+    double itemExtent,
     EdgeDims padding
-  }) : super(key: key, itemHeight: itemHeight, padding: padding);
+  }) : super(
+    key: key,
+    initialScrollOffset: initialScrollOffset,
+    scrollDirection: scrollDirection,
+    itemExtent: itemExtent,
+    padding: padding);
 
   List<T> items;
   ItemBuilder<T> itemBuilder;
+  bool itemsWrap;
 
-  void syncFields(ScrollableList<T> source) {
+  void syncConstructorArguments(ScrollableList<T> source) {
     items = source.items;
     itemBuilder = source.itemBuilder;
-    super.syncFields(source);
+    itemsWrap = source.itemsWrap;
+    super.syncConstructorArguments(source);
+  }
+
+  ScrollBehavior createScrollBehavior() {
+    return itemsWrap ? new UnboundedBehavior() : super.createScrollBehavior();
   }
 
   int get itemCount => items.length;
 
   List<Widget> buildItems(int start, int count) {
     List<Widget> result = new List<Widget>();
-    int end = math.min(start + count, items.length);
-    for (int i = start; i < end; ++i)
-      result.add(itemBuilder(items[i]));
+    int begin = itemsWrap ? start : math.max(0, start);
+    int end = itemsWrap ? begin + count : math.min(begin + count, items.length);
+    for (int i = begin; i < end; ++i)
+      result.add(itemBuilder(items[i % itemCount]));
     return result;
   }
 }
 
+class PageableList<T> extends ScrollableList<T> {
+  PageableList({
+    Key key,
+    double initialScrollOffset,
+    ScrollDirection scrollDirection: ScrollDirection.horizontal,
+    List<T> items,
+    ItemBuilder<T> itemBuilder,
+    bool itemsWrap: false,
+    double itemExtent,
+    EdgeDims padding,
+    this.duration: const Duration(milliseconds: 200),
+    this.curve: ease
+  }) : super(
+    key: key,
+    initialScrollOffset: initialScrollOffset,
+    scrollDirection: scrollDirection,
+    items: items,
+    itemBuilder: itemBuilder,
+    itemsWrap: itemsWrap,
+    itemExtent: itemExtent,
+    padding: padding
+  );
+
+  Duration duration;
+  Curve curve;
+
+  void syncConstructorArguments(PageableList<T> source) {
+    duration = source.duration;
+    curve = source.curve;
+    super.syncConstructorArguments(source);
+  }
+
+  double _snapScrollOffset(double newScrollOffset) {
+    double scaledScrollOffset = newScrollOffset / itemExtent;
+    double previousScrollOffset = scaledScrollOffset.floor() * itemExtent;
+    double nextScrollOffset = scaledScrollOffset.ceil() * itemExtent;
+    double delta = newScrollOffset - previousScrollOffset;
+    return (delta < itemExtent / 2.0 ? previousScrollOffset : nextScrollOffset)
+      .clamp(scrollBehavior.minScrollOffset, scrollBehavior.maxScrollOffset);
+  }
+
+  EventDisposition _handlePointerDown(_) {
+    return EventDisposition.ignored;
+  }
+
+  EventDisposition _handleFlingStart(sky.GestureEvent event) {
+    double velocity = _eventVelocity(event);
+    double newScrollOffset = _snapScrollOffset(scrollOffset + velocity.sign * itemExtent)
+      .clamp(_snapScrollOffset(scrollOffset - itemExtent / 2.0),
+             _snapScrollOffset(scrollOffset + itemExtent / 2.0));
+    scrollTo(newScrollOffset, duration: duration, curve: curve);
+    return EventDisposition.processed;
+  }
+
+  void settleScrollOffset() {
+    scrollTo(_snapScrollOffset(scrollOffset), duration: duration, curve: curve);
+  }
+}
+
 /// A general scrollable list for a large number of children that might not all
-/// have the same height. Prefer [FixedHeightScrollable] when all the children
+/// have the same height. Prefer [ScrollableWidgetList] when all the children
 /// have the same height because it can use that property to be more efficient.
 /// Prefer [ScrollableViewport] with a single child.
-class VariableHeightScrollable extends Scrollable {
-  VariableHeightScrollable({
+class ScrollableMixedWidgetList extends Scrollable {
+  ScrollableMixedWidgetList({
     Key key,
+    double initialScrollOffset,
     this.builder,
     this.token,
     this.layoutState
-  }) : super(key: key);
+  }) : super(key: key, initialScrollOffset: initialScrollOffset);
 
   IndexedBuilder builder;
   Object token;
-  BlockViewportLayoutState layoutState;
+  MixedViewportLayoutState layoutState;
 
   // When the token changes the scrollable's contents may have
   // changed. Remember as much so that after the new contents
   // have been laid out we can adjust the scrollOffset so that
   // the last page of content is still visible.
-  bool _contentsChanged = true;
+  bool _contentChanged = true;
 
   void initState() {
     assert(layoutState != null);
@@ -515,10 +639,10 @@ class VariableHeightScrollable extends Scrollable {
     super.didUnmount();
   }
 
-  void syncFields(VariableHeightScrollable source) {
+  void syncConstructorArguments(ScrollableMixedWidgetList source) {
     builder = source.builder;
     if (token != source.token)
-      _contentsChanged = true;
+      _contentChanged = true;
     token = source.token;
     if (layoutState != source.layoutState) {
       // Warning: this is unlikely to be what you intended.
@@ -527,32 +651,33 @@ class VariableHeightScrollable extends Scrollable {
       layoutState = source.layoutState;
       layoutState.addListener(_handleLayoutChanged);
     }
-    super.syncFields(source);
+    super.syncConstructorArguments(source);
   }
 
   ScrollBehavior createScrollBehavior() => new OverscrollBehavior();
   OverscrollBehavior get scrollBehavior => super.scrollBehavior;
 
   void _handleSizeChanged(Size newSize) {
-    scrollBehavior.containerSize = newSize.height;
+    scrollBy(scrollBehavior.updateExtents(
+      containerExtent: newSize.height,
+      scrollOffset: scrollOffset
+    ));
   }
 
   void _handleLayoutChanged() {
-    if (layoutState.didReachLastChild) {
-      scrollBehavior.contentsSize = layoutState.contentsSize;
-      if (_contentsChanged && scrollOffset > scrollBehavior.maxScrollOffset) {
-        _contentsChanged = false;
-        settleScrollOffset();
-      }
-    } else {
-      scrollBehavior.contentsSize = double.INFINITY;
+    double newScrollOffset = scrollBehavior.updateExtents(
+      contentExtent: layoutState.didReachLastChild ? layoutState.contentsSize : double.INFINITY,
+      scrollOffset: scrollOffset);
+    if (_contentChanged) {
+      _contentChanged = false;
+      scrollTo(newScrollOffset);
     }
   }
 
   Widget buildContent() {
     return new SizeObserver(
       callback: _handleSizeChanged,
-      child: new BlockViewport(
+      child: new MixedViewport(
         builder: builder,
         layoutState: layoutState,
         startOffset: scrollOffset,

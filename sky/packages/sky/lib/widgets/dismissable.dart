@@ -52,7 +52,7 @@ class Dismissable extends StatefulComponent {
       _startResizePerformance();
   }
 
-  void syncFields(Dismissable source) {
+  void syncConstructorArguments(Dismissable source) {
     child = source.child;
     onResized = source.onResized;
     onDismissed = source.onDismissed;
@@ -153,7 +153,10 @@ class Dismissable extends StatefulComponent {
     _dragUnderway = false;
     if (_isHorizontalFlingGesture(event)) {
       _dragX = event.velocityX.sign;
-      _fadePerformance.fling(velocity: event.velocityX.abs() * _kFlingVelocityScale);
+      if (_fadePerformance.isCompleted)
+        _startResizePerformance();
+      else
+        _fadePerformance.fling(velocity: event.velocityX.abs() * _kFlingVelocityScale);
     } else {
       _fadePerformance.reverse();
     }

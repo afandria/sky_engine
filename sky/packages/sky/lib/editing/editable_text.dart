@@ -29,7 +29,7 @@ class EditableText extends StatefulComponent {
   TextStyle style;
   Color cursorColor;
 
-  void syncFields(EditableText source) {
+  void syncConstructorArguments(EditableText source) {
     value = source.value;
     focused = source.focused;
     style = source.style;
@@ -105,6 +105,6 @@ class EditableText extends StatefulComponent {
       child: new CustomPaint(callback: _paintCursor, token: _showCursor)
     );
 
-    return new Flex([text, cursor]);
+    return new Row([text, cursor]);
   }
 }

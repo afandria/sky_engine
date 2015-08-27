@@ -10,6 +10,61 @@ import 'package:sky/base/image_resource.dart';
 import 'package:sky/base/lerp.dart';
 import 'package:sky/painting/shadows.dart';
 
+class EdgeDims {
+  // used for e.g. padding
+  const EdgeDims(this.top, this.right, this.bottom, this.left);
+  const EdgeDims.all(double value)
+      : top = value, right = value, bottom = value, left = value;
+  const EdgeDims.only({ this.top: 0.0,
+                        this.right: 0.0,
+                        this.bottom: 0.0,
+                        this.left: 0.0 });
+  const EdgeDims.symmetric({ double vertical: 0.0,
+                             double horizontal: 0.0 })
+    : top = vertical, left = horizontal, bottom = vertical, right = horizontal;
+
+  final double top;
+  final double right;
+  final double bottom;
+  final double left;
+
+  bool operator ==(other) {
+    if (identical(this, other))
+      return true;
+    return other is EdgeDims
+        && top == other.top
+        && right == other.right
+        && bottom == other.bottom
+        && left == other.left;
+  }
+
+  EdgeDims operator+(EdgeDims other) {
+    return new EdgeDims(top + other.top,
+                        right + other.right,
+                        bottom + other.bottom,
+                        left + other.left);
+  }
+
+  EdgeDims operator-(EdgeDims other) {
+    return new EdgeDims(top - other.top,
+                        right - other.right,
+                        bottom - other.bottom,
+                        left - other.left);
+  }
+
+  static const EdgeDims zero = const EdgeDims(0.0, 0.0, 0.0, 0.0);
+
+  int get hashCode {
+    int value = 373;
+    value = 37 * value + top.hashCode;
+    value = 37 * value + left.hashCode;
+    value = 37 * value + bottom.hashCode;
+    value = 37 * value + right.hashCode;
+    return value;
+  }
+  String toString() => "EdgeDims($top, $right, $bottom, $left)";
+}
+
 class BorderSide {
   const BorderSide({
     this.color: const Color(0xFF000000),
@@ -49,6 +104,10 @@ class Border {
   final BorderSide right;
   final BorderSide bottom;
   final BorderSide left;
+
+  EdgeDims get dimensions {
+    return new EdgeDims(top.width, right.width, bottom.width, left.width);
+  }
 
   int get hashCode {
     int value = 373;
@@ -177,54 +236,55 @@ void paintImage({
   sky.Image image,
   sky.ColorFilter colorFilter,
   fit: ImageFit.scaleDown,
-  repeat: ImageRepeat.noRepeat
+  repeat: ImageRepeat.noRepeat,
+  double positionX: 0.5,
+  double positionY: 0.5
 }) {
   Size bounds = rect.size;
   Size imageSize = new Size(image.width.toDouble(), image.height.toDouble());
-  Size src;
-  Size dst;
+  Size sourceSize;
+  Size destinationSize;
   switch(fit) {
     case ImageFit.fill:
-      src = imageSize;
-      dst = bounds;
+      sourceSize = imageSize;
+      destinationSize = bounds;
       break;
     case ImageFit.contain:
-      src = imageSize;
-      if (bounds.width / bounds.height > src.width / src.height) {
-        dst = new Size(bounds.width, src.height * bounds.width / src.width);
-      } else {
-        dst = new Size(src.width * bounds.height / src.height, bounds.height);
-      }
+      sourceSize = imageSize;
+      if (bounds.width / bounds.height > sourceSize.width / sourceSize.height)
+        destinationSize = new Size(sourceSize.width * bounds.height / sourceSize.height, bounds.height);
+      else
+        destinationSize = new Size(bounds.width, sourceSize.height * bounds.width / sourceSize.width);
       break;
     case ImageFit.cover:
-      if (bounds.width / bounds.height > imageSize.width / imageSize.height) {
-        src = new Size(imageSize.width, imageSize.width * bounds.height / bounds.width);
-      } else {
-        src = new Size(imageSize.height * bounds.width / bounds.height, imageSize.height);
-      }
-      dst = bounds;
+      if (bounds.width / bounds.height > imageSize.width / imageSize.height)
+        sourceSize = new Size(imageSize.width, imageSize.width * bounds.height / bounds.width);
+      else
+        sourceSize = new Size(imageSize.height * bounds.width / bounds.height, imageSize.height);
+      destinationSize = bounds;
       break;
     case ImageFit.none:
-      src = new Size(math.min(imageSize.width, bounds.width),
-                     math.min(imageSize.height, bounds.height));
-      dst = src;
+      sourceSize = new Size(math.min(imageSize.width, bounds.width),
+                            math.min(imageSize.height, bounds.height));
+      destinationSize = sourceSize;
       break;
     case ImageFit.scaleDown:
-      src = imageSize;
-      dst = bounds;
-      if (src.height > dst.height) {
-        dst = new Size(src.width * dst.height / src.height, src.height);
-      }
-      if (src.width > dst.width) {
-        dst = new Size(dst.width, src.height * dst.width / src.width);
-      }
+      sourceSize = imageSize;
+      destinationSize = bounds;
+      if (sourceSize.height > destinationSize.height)
+        destinationSize = new Size(sourceSize.width * destinationSize.height / sourceSize.height, sourceSize.height);
+      if (sourceSize.width > destinationSize.width)
+        destinationSize = new Size(destinationSize.width, sourceSize.height * destinationSize.width / sourceSize.width);
       break;
   }
   // TODO(abarth): Implement |repeat|.
   Paint paint = new Paint();
   if (colorFilter != null)
     paint.setColorFilter(colorFilter);
-  canvas.drawImageRect(image, Point.origin & src, rect.topLeft & dst, paint);
+  double dx = (bounds.width - destinationSize.width) * positionX;
+  double dy = (bounds.height - destinationSize.height) * positionY;
+  Point destinationPosition = rect.topLeft + new Offset(dx, dy);
+  canvas.drawImageRect(image, Point.origin & sourceSize, destinationPosition & destinationSize, paint);
 }
 
 typedef void BackgroundImageChangeListener();
@@ -456,13 +516,19 @@ class BoxPainter {
     if (_decoration.border == null)
       return;
 
-    if (_hasUniformBorder && _decoration.borderRadius != null) {
-      _paintBorderWithRadius(canvas, rect);
-      return;
+    if (_hasUniformBorder) {
+      if (_decoration.borderRadius != null) {
+        _paintBorderWithRadius(canvas, rect);
+        return;
+      }
+      if (_decoration.shape == Shape.circle) {
+        _paintBorderWithCircle(canvas, rect);
+        return;
+      }
     }
 
     assert(_decoration.borderRadius == null); // TODO(abarth): Support non-uniform rounded borders.
-    assert(_decoration.shape == Shape.rectangle); // TODO(ianh): Support borders on circles.
+    assert(_decoration.shape == Shape.rectangle); // TODO(ianh): Support non-uniform borders on circles.
 
     assert(_decoration.border.top != null);
     assert(_decoration.border.right != null);
@@ -511,6 +577,7 @@ class BoxPainter {
 
   void _paintBorderWithRadius(sky.Canvas canvas, Rect rect) {
     assert(_hasUniformBorder);
+    assert(_decoration.shape == Shape.rectangle);
     Color color = _decoration.border.top.color;
     double width = _decoration.border.top.width;
     double radius = _decoration.borderRadius;
@@ -518,6 +585,20 @@ class BoxPainter {
     sky.RRect outer = new sky.RRect()..setRectXY(rect, radius, radius);
     sky.RRect inner = new sky.RRect()..setRectXY(rect.deflate(width), radius - width, radius - width);
     canvas.drawDRRect(outer, inner, new Paint()..color = color);
+  }
+
+  void _paintBorderWithCircle(sky.Canvas canvas, Rect rect) {
+    assert(_hasUniformBorder);
+    assert(_decoration.shape == Shape.circle);
+    assert(_decoration.borderRadius == null);
+    double width = _decoration.border.top.width;
+    Paint paint = new Paint()
+      ..color = _decoration.border.top.color
+      ..strokeWidth = width
+      ..setStyle(sky.PaintingStyle.stroke);
+    Point center = rect.center;
+    double radius = (rect.shortestSide - width) / 2.0;
+    canvas.drawCircle(center, radius, paint);
   }
 
   void paint(sky.Canvas canvas, Rect rect) {

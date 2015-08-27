@@ -19,7 +19,7 @@ class FitnessItemList extends Component {
       child: new ScrollableList<FitnessItem>(
         padding: const EdgeDims.all(4.0),
         items: items,
-        itemHeight: kFitnessItemHeight,
+        itemExtent: kFitnessItemHeight,
         itemBuilder: (item) => item.toRow(onDismissed: onDismissed)
       )
     );
@@ -32,10 +32,10 @@ class DialogMenuItem extends ButtonBase {
   List<Widget> children;
   Function onPressed;
 
-  void syncFields(DialogMenuItem source) {
+  void syncConstructorArguments(DialogMenuItem source) {
     children = source.children;
     onPressed = source.onPressed;
-    super.syncFields(source);
+    super.syncConstructorArguments(source);
   }
 
   Widget buildContent() {
@@ -49,7 +49,7 @@ class DialogMenuItem extends ButtonBase {
         child: new InkWell(
           child: new Padding(
             padding: const EdgeDims.symmetric(horizontal: 16.0),
-            child: new Flex(children)
+            child: new Row(children)
           )
         )
       )
@@ -61,7 +61,7 @@ class FeedFragment extends StatefulComponent {
   FeedFragment({ this.navigator, this.userData, this.onItemCreated, this.onItemDeleted });
 
   Navigator navigator;
-  List<FitnessItem> userData;
+  UserData userData;
   FitnessItemHandler onItemCreated;
   FitnessItemHandler onItemDeleted;
 
@@ -73,7 +73,7 @@ class FeedFragment extends StatefulComponent {
     super.initState();
   }
 
-  void syncFields(FeedFragment source) {
+  void syncConstructorArguments(FeedFragment source) {
     navigator = source.navigator;
     userData = source.userData;
     onItemCreated = source.onItemCreated;
@@ -100,26 +100,26 @@ class FeedFragment extends StatefulComponent {
       onDismissed: _handleDrawerDismissed,
       navigator: navigator,
       children: [
-        new DrawerHeader(children: [new Text('Fitness')]),
+        new DrawerHeader(child: new Text('Fitness')),
         new DrawerItem(
           icon: 'action/view_list',
           onPressed: () => _handleFitnessModeChange(FitnessMode.feed),
           selected: _fitnessMode == FitnessMode.feed,
-          children: [new Text('Feed')]),
+          child: new Text('Feed')),
         new DrawerItem(
           icon: 'action/assessment',
           onPressed: () => _handleFitnessModeChange(FitnessMode.chart),
           selected: _fitnessMode == FitnessMode.chart,
-          children: [new Text('Chart')]),
+          child: new Text('Chart')),
         new DrawerDivider(),
         new DrawerItem(
           icon: 'action/settings',
           onPressed: _handleShowSettings,
-          children: [new Text('Settings')]),
+          child: new Text('Settings')),
         new DrawerItem(
           icon: 'action/help',
-          children: [new Text('Help & Feedback')])
-     ]
+          child: new Text('Help & Feedback'))
+      ]
     );
   }
 
@@ -179,12 +179,13 @@ class FeedFragment extends StatefulComponent {
     double startY;
     double endY;
     List<Point> dataSet = new List<Point>();
-    for (FitnessItem item in userData) {
+    for (FitnessItem item in userData.items) {
       if (item is Measurement) {
           double x = item.when.millisecondsSinceEpoch.toDouble();
           double y = item.weight;
-          if (startX == null)
+          if (startX == null || startX > x)
             startX = x;
+          if (endX == null || endX < x)
           endX = x;
           if (startY == null || startY > y)
             startY = y;
@@ -193,6 +194,10 @@ class FeedFragment extends StatefulComponent {
           dataSet.add(new Point(x, y));
       }
     }
+    if (userData.goalWeight != null && userData.goalWeight > 0.0) {
+      startY = math.min(startY, userData.goalWeight);
+      endY = math.max(endY, userData.goalWeight);
+    }
     playfair.ChartData data = new playfair.ChartData(
       startX: startX,
       startY: startY,
@@ -200,17 +205,21 @@ class FeedFragment extends StatefulComponent {
       endY: endY,
       dataSet: dataSet,
       numHorizontalGridlines: 5,
-      roundToPlaces: 1
+      roundToPlaces: 1,
+      indicatorLine: userData.goalWeight,
+      indicatorText: "GOAL WEIGHT"
     );
     return new playfair.Chart(data: data);
   }
 
   Widget buildBody() {
     TextStyle style = Theme.of(this).text.title;
-    if (userData.length == 0)
+    if (userData == null)
+      return new Material(type: MaterialType.canvas);
+    if (userData.items.length == 0)
       return new Material(
         type: MaterialType.canvas,
-        child: new Flex(
+        child: new Row(
           [new Text("No data yet.\nAdd some!", style: style)],
           justifyContent: FlexJustifyContent.center
         )
@@ -218,7 +227,7 @@ class FeedFragment extends StatefulComponent {
     switch (_fitnessMode) {
       case FitnessMode.feed:
         return new FitnessItemList(
-          items: userData,
+          items: userData.items.reversed.toList(),
           onDismissed: _handleItemDismissed
         );
       case FitnessMode.chart:
@@ -289,7 +298,7 @@ class AddItemDialog extends StatefulComponent {
 
   Navigator navigator;
 
-  void syncFields(AddItemDialog source) {
+  void syncConstructorArguments(AddItemDialog source) {
     this.navigator = source.navigator;
   }
 
@@ -317,7 +326,7 @@ class AddItemDialog extends StatefulComponent {
     }
     return new Dialog(
       title: new Text("What are you doing?"),
-      content: new ScrollableBlock(menuItems),
+      content: new Block(menuItems),
       onDismiss: navigator.pop,
       actions: [
         new FlatButton(

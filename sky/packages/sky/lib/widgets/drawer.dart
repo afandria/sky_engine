@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import 'dart:async';
 import 'dart:sky' as sky;
 
 import 'package:sky/animation/animated_value.dart';
@@ -68,11 +69,13 @@ class Drawer extends StatefulComponent {
     _performance.attachedForce = kDefaultSpringForce;
 
     if (navigator != null) {
-      navigator.pushState(this, (_) => _performance.reverse());
+      scheduleMicrotask(() {
+        navigator.pushState(this, (_) => _performance.reverse());
+      });
     }
   }
 
-  void syncFields(Drawer source) {
+  void syncConstructorArguments(Drawer source) {
     children = source.children;
     level = source.level;
     navigator = source.navigator;
@@ -102,7 +105,7 @@ class Drawer extends StatefulComponent {
           backgroundColor: Theme.of(this).canvasColor,
           boxShadow: shadows[level]),
         width: _kWidth,
-        child: new ScrollableBlock(children)
+        child: new Block(children)
       )
     );
 

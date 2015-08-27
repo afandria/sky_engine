@@ -2,14 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'package:sky/rendering/box.dart';
-import 'package:sky/rendering/flex.dart';
-import 'package:sky/widgets/raised_button.dart';
-import 'package:sky/widgets/basic.dart';
+import 'package:sky/widgets.dart';
 
 class ContainerApp extends App {
   Widget build() {
-    return new Flex([
+    return new Column([
         new Container(
           padding: new EdgeDims.all(10.0),
           margin: new EdgeDims.all(10.0),
@@ -23,7 +20,7 @@ class ContainerApp extends App {
         new Container(
           decoration: new BoxDecoration(backgroundColor: const Color(0xFFFFFF00)),
           padding: new EdgeDims.symmetric(horizontal: 50.0, vertical: 75.0),
-          child: new Flex([
+          child: new Row([
             new RaisedButton(
               child: new Text('PRESS ME'),
               onPressed: () => print("Hello World")
@@ -41,7 +38,6 @@ class ContainerApp extends App {
           )
         ),
       ],
-      direction: FlexDirection.vertical,
       justifyContent: FlexJustifyContent.spaceBetween
     );
   }

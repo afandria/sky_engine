@@ -34,7 +34,7 @@ class MealRow extends FitnessItemRow {
         )
       )
     ];
-    return new Flex(
+    return new Row(
       children,
       alignItems: FlexAlignItems.baseline,
       textBaseline: DefaultTextStyle.of(this).textBaseline
@@ -49,7 +49,7 @@ class MealFragment extends StatefulComponent {
   Navigator navigator;
   FitnessItemHandler onCreated;
 
-  void syncFields(MealFragment source) {
+  void syncConstructorArguments(MealFragment source) {
     navigator = source.navigator;
     onCreated = source.onCreated;
   }
@@ -92,7 +92,7 @@ class MealFragment extends StatefulComponent {
       child: new ScrollableViewport(
         child: new Container(
           padding: const EdgeDims.all(20.0),
-          child: new Block([
+          child: new BlockBody([
             new Text(meal.displayDate),
             new Input(
               key: descriptionKey,

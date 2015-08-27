@@ -14,18 +14,25 @@ import 'package:sky/painting/paragraph_painter.dart';
 import 'package:sky/rendering/block.dart';
 import 'package:sky/rendering/box.dart';
 import 'package:sky/rendering/flex.dart';
+import 'package:sky/rendering/image.dart';
 import 'package:sky/rendering/object.dart';
 import 'package:sky/rendering/paragraph.dart';
+import 'package:sky/rendering/proxy_box.dart';
+import 'package:sky/rendering/shifted_box.dart';
 import 'package:sky/rendering/stack.dart';
+import 'package:sky/rendering/viewport.dart';
 import 'package:sky/widgets/default_text_style.dart';
 import 'package:sky/widgets/framework.dart';
 
 export 'package:sky/base/hit_test.dart' show EventDisposition, combineEventDispositions;
+export 'package:sky/painting/text_style.dart';
 export 'package:sky/rendering/block.dart' show BlockDirection;
-export 'package:sky/rendering/box.dart' show BackgroundImage, BoxConstraints, BoxDecoration, Border, BorderSide, EdgeDims, ScrollDirection;
-export 'package:sky/rendering/flex.dart' show FlexDirection, FlexJustifyContent, FlexAlignItems;
+export 'package:sky/rendering/box.dart' show BoxConstraints;
+export 'package:sky/rendering/flex.dart' show FlexJustifyContent, FlexAlignItems, FlexDirection;
 export 'package:sky/rendering/object.dart' show Point, Offset, Size, Rect, Color, Paint, Path;
+export 'package:sky/rendering/proxy_box.dart' show BackgroundImage, BoxDecoration, BoxDecorationPosition, BoxShadow, Border, BorderSide, EdgeDims, Shape;
 export 'package:sky/rendering/toggleable.dart' show ValueChanged;
+export 'package:sky/rendering/viewport.dart' show ScrollDirection;
 export 'package:sky/widgets/framework.dart' show Key, GlobalKey, Widget, Component, StatefulComponent, App, runApp, Listener, ParentDataNode;
 
 // PAINTING NODES
@@ -63,17 +70,23 @@ class ColorFilter extends OneChildRenderObjectWrapper {
 }
 
 class DecoratedBox extends OneChildRenderObjectWrapper {
-  DecoratedBox({ Key key, this.decoration, Widget child })
-    : super(key: key, child: child);
+  DecoratedBox({
+    Key key,
+    this.decoration,
+    this.position: BoxDecorationPosition.background,
+    Widget child
+  }) : super(key: key, child: child);
 
   final BoxDecoration decoration;
+  final BoxDecorationPosition position;
 
-  RenderDecoratedBox createNode() => new RenderDecoratedBox(decoration: decoration);
+  RenderDecoratedBox createNode() => new RenderDecoratedBox(decoration: decoration, position: position);
   RenderDecoratedBox get renderObject => super.renderObject;
 
   void syncRenderObject(DecoratedBox old) {
     super.syncRenderObject(old);
     renderObject.decoration = decoration;
+    renderObject.position = position;
   }
 }
 
@@ -170,14 +183,26 @@ class Padding extends OneChildRenderObjectWrapper {
   }
 }
 
-class Center extends OneChildRenderObjectWrapper {
-  Center({ Key key, Widget child })
+class Align extends OneChildRenderObjectWrapper {
+  Align({ Key key, this.horizontal: 0.5, this.vertical: 0.5, Widget child })
     : super(key: key, child: child);
 
-  RenderPositionedBox createNode() => new RenderPositionedBox();
+  final double horizontal;
+  final double vertical;
+
+  RenderPositionedBox createNode() => new RenderPositionedBox(horizontal: horizontal, vertical: vertical);
   RenderPositionedBox get renderObject => super.renderObject;
 
-  // Nothing to sync, so we don't implement syncRenderObject()
+  void syncRenderObject(Align old) {
+    super.syncRenderObject(old);
+    renderObject.horizontal = horizontal;
+    renderObject.vertical = vertical;
+  }
+}
+
+class Center extends Align {
+  Center({ Key key, Widget child })
+    : super(key: key, child: child);
 }
 
 class SizedBox extends OneChildRenderObjectWrapper {
@@ -242,7 +267,7 @@ class ShrinkWrapWidth extends OneChildRenderObjectWrapper {
   final double stepWidth;
   final double stepHeight;
 
-  RenderShrinkWrapWidth createNode() => new RenderShrinkWrapWidth();
+  RenderShrinkWrapWidth createNode() => new RenderShrinkWrapWidth(stepWidth: stepWidth, stepHeight: stepHeight);
   RenderShrinkWrapWidth get renderObject => super.renderObject;
 
   void syncRenderObject(ShrinkWrapWidth old) {
@@ -250,6 +275,16 @@ class ShrinkWrapWidth extends OneChildRenderObjectWrapper {
     renderObject.stepWidth = stepWidth;
     renderObject.stepHeight = stepHeight;
   }
+}
+
+class ShrinkWrapHeight extends OneChildRenderObjectWrapper {
+  ShrinkWrapHeight({ Key key, Widget child })
+    : super(key: key, child: child);
+
+  RenderShrinkWrapHeight createNode() => new RenderShrinkWrapHeight();
+  RenderShrinkWrapHeight get renderObject => super.renderObject;
+
+  // Nothing to sync, so we don't implement syncRenderObject()
 }
 
 class Baseline extends OneChildRenderObjectWrapper {
@@ -272,21 +307,22 @@ class Baseline extends OneChildRenderObjectWrapper {
 class Viewport extends OneChildRenderObjectWrapper {
   Viewport({
     Key key,
-    this.scrollOffset: Offset.zero,
     this.scrollDirection: ScrollDirection.vertical,
+    this.scrollOffset: Offset.zero,
     Widget child
   }) : super(key: key, child: child);
 
-  final Offset scrollOffset;
   final ScrollDirection scrollDirection;
+  final Offset scrollOffset;
 
-  RenderViewport createNode() => new RenderViewport(scrollOffset: scrollOffset, scrollDirection: scrollDirection);
+  RenderViewport createNode() => new RenderViewport(scrollDirection: scrollDirection, scrollOffset: scrollOffset);
   RenderViewport get renderObject => super.renderObject;
 
   void syncRenderObject(Viewport old) {
     super.syncRenderObject(old);
-    renderObject.scrollOffset = scrollOffset;
+    // Order dependency: RenderViewport validates scrollOffset based on scrollDirection.
     renderObject.scrollDirection = scrollDirection;
+    renderObject.scrollOffset = scrollOffset;
   }
 }
 
@@ -320,6 +356,7 @@ class Container extends Component {
     this.child,
     this.constraints,
     this.decoration,
+    this.foregroundDecoration,
     this.width,
     this.height,
     this.margin,
@@ -330,11 +367,21 @@ class Container extends Component {
   final Widget child;
   final BoxConstraints constraints;
   final BoxDecoration decoration;
+  final BoxDecoration foregroundDecoration;
   final EdgeDims margin;
   final EdgeDims padding;
   final Matrix4 transform;
   final double width;
   final double height;
+
+  EdgeDims get _paddingIncludingBorder {
+    if (decoration == null || decoration.border == null)
+      return padding;
+    EdgeDims borderPadding = decoration.border.dimensions;
+    if (padding == null)
+      return borderPadding;
+    return padding + borderPadding;
+  }
 
   Widget build() {
     Widget current = child;
@@ -342,11 +389,20 @@ class Container extends Component {
     if (child == null && (width == null || height == null))
       current = new ConstrainedBox(constraints: BoxConstraints.expand);
 
-    if (padding != null)
-      current = new Padding(padding: padding, child: current);
+    EdgeDims effectivePadding = _paddingIncludingBorder;
+    if (effectivePadding != null)
+      current = new Padding(padding: effectivePadding, child: current);
 
     if (decoration != null)
       current = new DecoratedBox(decoration: decoration, child: current);
+
+    if (foregroundDecoration != null) {
+      current = new DecoratedBox(
+        decoration: foregroundDecoration,
+        position: BoxDecorationPosition.foreground,
+        child: current
+      );
+    }
 
     if (width != null || height != null) {
       current = new SizedBox(
@@ -373,8 +429,8 @@ class Container extends Component {
 
 // LAYOUT NODES
 
-class Block extends MultiChildRenderObjectWrapper {
-  Block(List<Widget> children, {
+class BlockBody extends MultiChildRenderObjectWrapper {
+  BlockBody(List<Widget> children, {
     Key key,
     this.direction: BlockDirection.vertical
   }) : super(key: key, children: children);
@@ -440,6 +496,24 @@ class Flex extends MultiChildRenderObjectWrapper {
     renderObject.textBaseline = textBaseline;
   }
 
+}
+
+class Row extends Flex {
+  Row(List<Widget> children, {
+    Key key,
+    justifyContent: FlexJustifyContent.start,
+    alignItems: FlexAlignItems.center,
+    textBaseline
+  }) : super(children, key: key, direction: FlexDirection.horizontal, justifyContent: justifyContent, alignItems: alignItems, textBaseline: textBaseline);
+}
+
+class Column extends Flex {
+  Column(List<Widget> children, {
+    Key key,
+    justifyContent: FlexJustifyContent.start,
+    alignItems: FlexAlignItems.center,
+    textBaseline
+  }) : super(children, key: key, direction: FlexDirection.vertical, justifyContent: justifyContent, alignItems: alignItems, textBaseline: textBaseline);
 }
 
 class Flexible extends ParentDataNode {
@@ -513,14 +587,30 @@ class Text extends Component {
 }
 
 class Image extends LeafRenderObjectWrapper {
-  Image({ Key key, this.image, this.width, this.height, this.colorFilter }) : super(key: key);
+  Image({
+    Key key,
+    this.image,
+    this.width,
+    this.height,
+    this.colorFilter,
+    this.fit: ImageFit.scaleDown,
+    this.repeat: ImageRepeat.noRepeat
+  }) : super(key: key);
 
   final sky.Image image;
   final double width;
   final double height;
   final sky.ColorFilter colorFilter;
+  final ImageFit fit;
+  final ImageRepeat repeat;
 
-  RenderImage createNode() => new RenderImage(image: image, width: width, height: height, colorFilter: colorFilter);
+  RenderImage createNode() => new RenderImage(
+    image: image,
+    width: width,
+    height: height,
+    colorFilter: colorFilter,
+    fit: fit,
+    repeat: repeat);
   RenderImage get renderObject => super.renderObject;
 
   void syncRenderObject(Widget old) {
@@ -529,22 +619,35 @@ class Image extends LeafRenderObjectWrapper {
     renderObject.width = width;
     renderObject.height = height;
     renderObject.colorFilter = colorFilter;
+    renderObject.fit = fit;
+    renderObject.repeat = repeat;
   }
 }
 
 class ImageListener extends StatefulComponent {
-  ImageListener({ Key key, this.image, this.width, this.height, this.colorFilter }) : super(key: key);
+  ImageListener({
+    Key key,
+    this.image,
+    this.width,
+    this.height,
+    this.colorFilter,
+    this.fit: ImageFit.scaleDown,
+    this.repeat: ImageRepeat.noRepeat
+  }) : super(key: key) {
+    assert(image != null);
+  }
 
   ImageResource image;
   double width;
   double height;
   sky.ColorFilter colorFilter;
+  ImageFit fit;
+  ImageRepeat repeat;
 
   sky.Image _resolvedImage;
 
   void _handleImageChanged(sky.Image resolvedImage) {
-    if (!mounted)
-      return;
+    assert(mounted);
     setState(() {
       _resolvedImage = resolvedImage;
     });
@@ -560,7 +663,7 @@ class ImageListener extends StatefulComponent {
     image.removeListener(_handleImageChanged);
   }
 
-  void syncFields(ImageListener source) {
+  void syncConstructorArguments(ImageListener source) {
     final bool needToUpdateListeners = (image != source.image) && mounted;
     if (needToUpdateListeners)
       image.removeListener(_handleImageChanged);
@@ -568,6 +671,8 @@ class ImageListener extends StatefulComponent {
     width = source.width;
     height = source.height;
     colorFilter = source.colorFilter;
+    fit = source.fit;
+    repeat = source.repeat;
     if (needToUpdateListeners)
       image.addListener(_handleImageChanged);
   }
@@ -577,44 +682,71 @@ class ImageListener extends StatefulComponent {
       image: _resolvedImage,
       width: width,
       height: height,
-      colorFilter: colorFilter
+      colorFilter: colorFilter,
+      fit: fit,
+      repeat: repeat
     );
   }
 }
 
 class NetworkImage extends Component {
-  NetworkImage({ Key key, this.src, this.width, this.height, this.colorFilter }) : super(key: key);
+  NetworkImage({
+    Key key,
+    this.src,
+    this.width,
+    this.height,
+    this.colorFilter,
+    this.fit: ImageFit.scaleDown,
+    this.repeat: ImageRepeat.noRepeat
+  }) : super(key: key);
 
   final String src;
   final double width;
   final double height;
   final sky.ColorFilter colorFilter;
+  final ImageFit fit;
+  final ImageRepeat repeat;
 
   Widget build() {
     return new ImageListener(
       image: image_cache.load(src),
       width: width,
       height: height,
-      colorFilter: colorFilter
+      colorFilter: colorFilter,
+      fit: fit,
+      repeat: repeat
     );
   }
 }
 
 class AssetImage extends Component {
-  AssetImage({ Key key, this.name, this.bundle, this.width, this.height, this.colorFilter }) : super(key: key);
+  AssetImage({
+    Key key,
+    this.name,
+    this.bundle,
+    this.width,
+    this.height,
+    this.colorFilter,
+    this.fit: ImageFit.scaleDown,
+    this.repeat: ImageRepeat.noRepeat
+  }) : super(key: key);
 
   final String name;
   final AssetBundle bundle;
   final double width;
   final double height;
   final sky.ColorFilter colorFilter;
+  final ImageFit fit;
+  final ImageRepeat repeat;
 
   Widget build() {
     return new ImageListener(
       image: bundle.loadImage(name),
       width: width,
       height: height,
-      colorFilter: colorFilter
+      colorFilter: colorFilter,
+      fit: fit,
+      repeat: repeat
     );
   }
 }
@@ -641,7 +773,7 @@ class WidgetToRenderBoxAdapter extends LeafRenderObjectWrapper {
     RenderObjectWrapper ancestor = findAncestorRenderObjectWrapper();
     assert(ancestor is RenderObjectWrapper);
     assert(ancestor.renderObject == renderObject.parent);
-    ancestor.detachChildRoot(this);
+    ancestor.detachChildRenderObject(this);
     super.remove();
   }
 }

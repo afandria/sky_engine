@@ -8,30 +8,30 @@ import 'dart:sky' as sky;
 
 import 'package:sky/base/hit_test.dart';
 import 'package:sky/base/scheduler.dart' as scheduler;
-import 'package:sky/mojo/activity.dart' as activity;
+import 'package:sky/mojo/activity.dart';
 import 'package:sky/rendering/box.dart';
 import 'package:sky/rendering/object.dart';
 import 'package:sky/rendering/sky_binding.dart';
+import 'package:sky/rendering/view.dart';
 
 export 'package:sky/base/hit_test.dart' show EventDisposition, combineEventDispositions;
 export 'package:sky/rendering/box.dart' show BoxConstraints, BoxDecoration, Border, BorderSide, EdgeDims;
-export 'package:sky/rendering/flex.dart' show FlexDirection;
 export 'package:sky/rendering/object.dart' show Point, Offset, Size, Rect, Color, Paint, Path;
 
-final bool _shouldLogRenderDuration = false;
+final bool _shouldLogRenderDuration = false; // see also 'enableProfilingLoop' argument to runApp()
 
 typedef Widget Builder();
 typedef void WidgetTreeWalker(Widget);
 
 abstract class Key {
-  Key.constructor(); // so that subclasses can call us, since the Key() factory constructor shadows the implicit constructor
+  const Key.constructor(); // so that subclasses can call us, since the Key() factory constructor shadows the implicit constructor
   factory Key(String value) => new StringKey(value);
   factory Key.stringify(Object value) => new StringKey(value.toString());
   factory Key.fromObjectIdentity(Object value) => new ObjectKey(value);
 }
 
 class StringKey extends Key {
-  StringKey(this.value) : super.constructor();
+  const StringKey(this.value) : super.constructor();
   final String value;
   String toString() => '[\'${value}\']';
   bool operator==(other) => other is StringKey && other.value == value;
@@ -39,23 +39,26 @@ class StringKey extends Key {
 }
 
 class ObjectKey extends Key {
-  ObjectKey(this.value) : super.constructor();
+  const ObjectKey(this.value) : super.constructor();
   final Object value;
   String toString() => '[${value.runtimeType}(${value.hashCode})]';
   bool operator==(other) => other is ObjectKey && identical(other.value, value);
   int get hashCode => identityHashCode(value);
 }
 
-typedef void GlobalKeyRemovalListener(GlobalKey key);
+typedef void GlobalKeySyncListener(GlobalKey key, Widget widget);
+typedef void GlobalKeyRemoveListener(GlobalKey key);
 
 abstract class GlobalKey extends Key {
-  GlobalKey.constructor() : super.constructor(); // so that subclasses can call us, since the Key() factory constructor shadows the implicit constructor
+  const GlobalKey.constructor() : super.constructor(); // so that subclasses can call us, since the Key() factory constructor shadows the implicit constructor
   factory GlobalKey({ String label }) => new LabeledGlobalKey(label);
   factory GlobalKey.fromObjectIdentity(Object value) => new GlobalObjectKey(value);
 
   static final Map<GlobalKey, Widget> _registry = new Map<GlobalKey, Widget>();
   static final Map<GlobalKey, int> _debugDuplicates = new Map<GlobalKey, int>();
-  static final Map<GlobalKey, Set<GlobalKeyRemovalListener>> _removalListeners = new Map<GlobalKey, Set<GlobalKeyRemovalListener>>();
+  static final Map<GlobalKey, Set<GlobalKeySyncListener>> _syncListeners = new Map<GlobalKey, Set<GlobalKeySyncListener>>();
+  static final Map<GlobalKey, Set<GlobalKeyRemoveListener>> _removeListeners = new Map<GlobalKey, Set<GlobalKeyRemoveListener>>();
+  static final Set<GlobalKey> _syncedKeys = new Set<GlobalKey>();
   static final Set<GlobalKey> _removedKeys = new Set<GlobalKey>();
 
   void _register(Widget widget) {
@@ -89,24 +92,41 @@ abstract class GlobalKey extends Key {
     }
   }
 
-  static bool _notifyingListeners = false;
+  void _didSync() {
+    _syncedKeys.add(this);
+  }
 
-  static void registerRemovalListener(GlobalKey key, GlobalKeyRemovalListener listener) {
-    assert(!_notifyingListeners);
+  static void registerSyncListener(GlobalKey key, GlobalKeySyncListener listener) {
     assert(key != null);
-    if (!_removalListeners.containsKey(key))
-      _removalListeners[key] = new Set<GlobalKeyRemovalListener>();
-    bool added = _removalListeners[key].add(listener);
+    Set<GlobalKeySyncListener> listeners =
+        _syncListeners.putIfAbsent(key, () => new Set<GlobalKeySyncListener>());
+    bool added = listeners.add(listener);
     assert(added);
   }
 
-  static void unregisterRemovalListener(GlobalKey key, GlobalKeyRemovalListener listener) {
-    assert(!_notifyingListeners);
+  static void unregisterSyncListener(GlobalKey key, GlobalKeySyncListener listener) {
     assert(key != null);
-    assert(_removalListeners.containsKey(key));
-    bool removed = _removalListeners[key].remove(listener);
-    if (_removalListeners[key].isEmpty)
-      _removalListeners.remove(key);
+    assert(_syncListeners.containsKey(key));
+    bool removed = _syncListeners[key].remove(listener);
+    if (_syncListeners[key].isEmpty)
+      _syncListeners.remove(key);
+    assert(removed);
+  }
+
+  static void registerRemoveListener(GlobalKey key, GlobalKeyRemoveListener listener) {
+    assert(key != null);
+    Set<GlobalKeyRemoveListener> listeners =
+        _removeListeners.putIfAbsent(key, () => new Set<GlobalKeyRemoveListener>());
+    bool added = listeners.add(listener);
+    assert(added);
+  }
+
+  static void unregisterRemoveListener(GlobalKey key, GlobalKeyRemoveListener listener) {
+    assert(key != null);
+    assert(_removeListeners.containsKey(key));
+    bool removed = _removeListeners[key].remove(listener);
+    if (_removeListeners[key].isEmpty)
+      _removeListeners.remove(key);
     assert(removed);
   }
 
@@ -119,29 +139,43 @@ abstract class GlobalKey extends Key {
     assert(!_inBuildDirtyComponents);
     assert(!Widget._notifyingMountStatus);
     assert(_debugDuplicates.isEmpty);
-    _notifyingListeners = true;
-    for (GlobalKey key in _removedKeys) {
-      if (!_registry.containsKey(key) && _removalListeners.containsKey(key)) {
-        for (GlobalKeyRemovalListener listener in _removalListeners[key])
-          listener(key);
-        _removalListeners.remove(key);
+    if (_syncedKeys.isEmpty && _removedKeys.isEmpty)
+      return;
+    try {
+
+      for (GlobalKey key in _syncedKeys) {
+        Widget widget = _registry[key];
+        if (widget != null && _syncListeners.containsKey(key)) {
+          Set<GlobalKeySyncListener> localListeners = new Set<GlobalKeySyncListener>.from(_syncListeners[key]);
+          for (GlobalKeySyncListener listener in localListeners)
+            listener(key, widget);
+        }
       }
+
+      for (GlobalKey key in _removedKeys) {
+        if (!_registry.containsKey(key) && _removeListeners.containsKey(key)) {
+          Set<GlobalKeyRemoveListener> localListeners = new Set<GlobalKeyRemoveListener>.from(_removeListeners[key]);
+          for (GlobalKeyRemoveListener listener in localListeners)
+            listener(key);
+        }
+      }
+    } finally {
+      _removedKeys.clear();
+      _syncedKeys.clear();
     }
-    _removedKeys.clear();
-    _notifyingListeners = false;
   }
 
 }
 
 class LabeledGlobalKey extends GlobalKey {
   // the label is purely for documentary purposes and does not affect the key
-  LabeledGlobalKey(this._label) : super.constructor();
+  const LabeledGlobalKey(this._label) : super.constructor();
   final String _label;
   String toString() => '[GlobalKey ${_label != null ? _label : hashCode}]';
 }
 
 class GlobalObjectKey extends GlobalKey {
-  GlobalObjectKey(this.value) : super.constructor();
+  const GlobalObjectKey(this.value) : super.constructor();
   final Object value;
   String toString() => '[GlobalKey ${value.runtimeType}(${value.hashCode})]';
   bool operator==(other) => other is GlobalObjectKey && identical(other.value, value);
@@ -256,10 +290,13 @@ abstract class Widget {
   // Subclasses which implements Nodes that become stateful may return true
   // if the node has become stateful and should be retained.
   // This is called immediately before _sync().
-  // Component.retainStatefulNodeIfPossible() calls syncFields().
+  // Component.retainStatefulNodeIfPossible() calls syncConstructorArguments().
   bool retainStatefulNodeIfPossible(Widget newNode) => false;
 
-  void _sync(Widget old, dynamic slot);
+  void _sync(Widget old, dynamic slot) {
+    if (key is GlobalKey)
+      (key as GlobalKey)._didSync(); // TODO(ianh): Remove the cast once the analyzer is cleverer.
+  }
   void updateSlot(dynamic newSlot);
   // 'slot' is the identifier that the ancestor RenderObjectWrapper uses to know
   // where to put this descendant. If you just defer to a child, then make sure
@@ -294,22 +331,12 @@ abstract class Widget {
   }
 
   void remove() {
+    walkChildren((Widget child) => child.remove());
     _renderObject = null;
     setParent(null);
   }
 
-  void removeChild(Widget node) {
-    // Call this when we no longer have a child equivalent to node.
-    // For example, when our child has changed type, or has been set to null.
-    // Do not call this when our child has been replaced by an equivalent but
-    // newer instance that will sync() with the old one, since in that case
-    // the subtree starting from the old node, as well as the render tree that
-    // belonged to the old node, continue to live on in the replacement node.
-    node.remove();
-    assert(node.parent == null);
-  }
-
-  void detachRoot();
+  void detachRenderObject();
 
   // Returns the child which should be retained as the child of this node.
   Widget syncChild(Widget newNode, Widget oldNode, dynamic slot) {
@@ -326,14 +353,14 @@ abstract class Widget {
     if (newNode == null) {
       // the child in this slot has gone away
       assert(oldNode.mounted);
-      oldNode.detachRoot();
-      removeChild(oldNode);
+      oldNode.detachRenderObject();
+      oldNode.remove();
       assert(!oldNode.mounted);
       return null;
     }
 
     if (oldNode != null) {
-      if (oldNode.runtimeType == newNode.runtimeType && oldNode.key == newNode.key) {
+      if (_canSync(newNode, oldNode)) {
         if (oldNode.retainStatefulNodeIfPossible(newNode)) {
           assert(oldNode.mounted);
           assert(!newNode.mounted);
@@ -346,8 +373,8 @@ abstract class Widget {
         }
       } else {
         assert(oldNode.mounted);
-        oldNode.detachRoot();
-        removeChild(oldNode);
+        oldNode.detachRenderObject();
+        oldNode.remove();
         oldNode = null;
       }
     }
@@ -407,6 +434,10 @@ abstract class Widget {
   }
 }
 
+bool _canSync(Widget a, Widget b) {
+  return a.runtimeType == b.runtimeType && a.key == b.key;
+}
+
 
 // Descendants of TagNode provide a way to tag RenderObjectWrapper and
 // Component nodes with annotations, such as event listeners,
@@ -430,25 +461,24 @@ abstract class TagNode extends Widget {
   void _sync(Widget old, dynamic slot) {
     Widget oldChild = old == null ? null : (old as TagNode).child;
     child = syncChild(child, oldChild, slot);
-    assert(child.parent == this);
-    assert(child.renderObject != null);
-    _renderObject = child.renderObject;
-    assert(_renderObject == renderObject); // in case a subclass reintroduces it
+    if (child != null) {
+      assert(child.parent == this);
+      assert(child.renderObject != null);
+      _renderObject = child.renderObject;
+      assert(_renderObject == renderObject); // in case a subclass reintroduces it
+    } else {
+      _renderObject = null;
+    }
+    super._sync(old, slot);
   }
 
   void updateSlot(dynamic newSlot) {
     child.updateSlot(newSlot);
   }
 
-  void remove() {
+  void detachRenderObject() {
     if (child != null)
-      removeChild(child);
-    super.remove();
-  }
-
-  void detachRoot() {
-    if (child != null)
-      child.detachRoot();
+      child.detachRenderObject();
   }
 
 }
@@ -596,36 +626,36 @@ abstract class Component extends Widget {
       : _order = _currentOrder + 1,
         super._withKey(key);
 
-  bool _isBuilding = false;
+  bool _debugIsBuilding = false;
+  static String _debugLastComponent;
 
   bool _dirty = true;
 
-  Widget _built;
+  Widget _child;
   dynamic _slot; // cached slot from the last time we were synced
 
   void updateSlot(dynamic newSlot) {
     _slot = newSlot;
-    if (_built != null)
-      _built.updateSlot(newSlot);
+    if (_child != null)
+      _child.updateSlot(newSlot);
   }
 
   void walkChildren(WidgetTreeWalker walker) {
-    if (_built != null)
-      walker(_built);
+    if (_child != null)
+      walker(_child);
   }
 
   void remove() {
-    assert(_built != null);
+    assert(_child != null);
     assert(renderObject != null);
-    removeChild(_built);
-    _built = null;
     super.remove();
+    _child = null;
   }
 
-  void detachRoot() {
-    assert(_built != null);
+  void detachRenderObject() {
+    assert(_child != null);
     assert(renderObject != null);
-    _built.detachRoot();
+    _child.detachRenderObject();
   }
 
   void dependenciesChanged() {
@@ -643,40 +673,55 @@ abstract class Component extends Widget {
 
   // There are three cases here:
   // 1) Building for the first time:
-  //      assert(_built == null && old == null)
+  //      assert(_child == null && old == null)
   // 2) Re-building (because a dirty flag got set):
-  //      assert(_built != null && old == null)
+  //      assert(_child != null && old == null)
   // 3) Syncing against an old version
-  //      assert(_built == null && old != null)
+  //      assert(_child == null && old != null)
   void _sync(Component old, dynamic slot) {
-    assert(_built == null || old == null);
+    assert(_child == null || old == null);
 
     updateSlot(slot);
 
-    var oldBuilt;
+    Widget oldChild;
     if (old == null) {
-      oldBuilt = _built;
+      oldChild = _child;
     } else {
-      assert(_built == null);
-      oldBuilt = old._built;
+      assert(_child == null);
+      oldChild = old._child;
     }
 
-    _isBuilding = true;
+    String _debugPreviousComponent;
+    assert(() {
+      _debugIsBuilding = true;
+      _debugPreviousComponent = _debugLastComponent;
+      if (_debugLastComponent != null)
+        _debugLastComponent = "$_debugPreviousComponent -> ${this.toStringName()}";
+      else
+        _debugLastComponent = "Build chain: ${this.toStringName()}";
+      return true;
+    });
 
     int lastOrder = _currentOrder;
     _currentOrder = _order;
-    _built = build();
+    _child = build();
     _currentOrder = lastOrder;
-    assert(_built != null);
-    _built = syncChild(_built, oldBuilt, slot);
-    assert(_built != null);
-    assert(_built.parent == this);
-    _isBuilding = false;
+    assert(_child != null);
+    _child = syncChild(_child, oldChild, slot);
+    assert(_child != null);
+    assert(_child.parent == this);
+
+    assert(() {
+      _debugIsBuilding = false;
+      _debugLastComponent = _debugPreviousComponent;
+      return true;
+    });
 
     _dirty = false;
-    _renderObject = _built.renderObject;
+    _renderObject = _child.renderObject;
     assert(_renderObject == renderObject); // in case a subclass reintroduces it
     assert(renderObject != null);
+    super._sync(old, slot);
   }
 
   void _buildIfDirty() {
@@ -687,7 +732,7 @@ abstract class Component extends Widget {
   }
 
   void _scheduleBuild() {
-    assert(!_isBuilding);
+    assert(!_debugIsBuilding);
     if (_dirty || !_mounted)
       return;
     _dirty = true;
@@ -723,13 +768,12 @@ abstract class StatefulComponent extends Component {
   bool retainStatefulNodeIfPossible(StatefulComponent newNode) {
     assert(!_disqualifiedFromEverAppearingAgain);
     assert(newNode != null);
-    assert(runtimeType == newNode.runtimeType);
-    assert(key == newNode.key);
-    assert(_built != null);
+    assert(_canSync(this, newNode));
+    assert(_child != null);
     newNode._disqualifiedFromEverAppearingAgain = true;
 
-    newNode._built = _built;
-    _built = null;
+    newNode._child = _child;
+    _child = null;
     _dirty = true;
 
     return true;
@@ -746,7 +790,7 @@ abstract class StatefulComponent extends Component {
       _isStateInitialized = true;
     }
     if (old != null)
-      syncFields(old);
+      syncConstructorArguments(old);
     super._sync(old, slot);
   }
 
@@ -757,15 +801,17 @@ abstract class StatefulComponent extends Component {
 
   // This is called by _sync(). Derived classes should override this
   // method to update `this` to account for the new values the parent
-  // passed to `source`. Make sure to call super.syncFields(source)
+  // passed to `source`. Make sure to call super.syncConstructorArguments(source)
   // unless you are extending StatefulComponent directly.
-  void syncFields(Component source);
+  void syncConstructorArguments(Component source);
 
   Widget syncChild(Widget node, Widget oldNode, dynamic slot) {
     assert(!_disqualifiedFromEverAppearingAgain);
     return super.syncChild(node, oldNode, slot);
   }
 
+  // Calls function fn immediately and then schedules another build
+  // for this Component.
   void setState(void fn()) {
     assert(!_disqualifiedFromEverAppearingAgain);
     fn();
@@ -861,10 +907,10 @@ void _scheduleComponentForRender(Component component) {
   }
 }
 
-// RenderObjectWrappers correspond to a desired state of a RenderObject.
-// They are fully immutable, with one exception: A Widget which is a
-// Component which lives within an MultiChildRenderObjectWrapper's
-// children list, may be replaced with the "old" instance if it has
+// RenderObjectWrappers correspond to a desired state of a
+// RenderObject. They are fully immutable, except that a Widget which
+// is a Component which lives within a RenderObjectWrapper's children
+// list may be in-place replaced with the "old" instance if it has
 // become stateful.
 abstract class RenderObjectWrapper extends Widget {
 
@@ -880,16 +926,16 @@ abstract class RenderObjectWrapper extends Widget {
     Widget target = RenderObjectWrapper._getMounted(renderObject);
     if (target == null)
       return;
-    RenderObject targetRoot = target.renderObject;
-    while (target != null && target.renderObject == targetRoot) {
+    RenderObject targetRenderObject = target.renderObject;
+    while (target != null && target.renderObject == targetRenderObject) {
       yield target;
       target = target.parent;
     }
   }
 
   RenderObjectWrapper _ancestor;
-  void insertChildRoot(RenderObjectWrapper child, dynamic slot);
-  void detachChildRoot(RenderObjectWrapper child);
+  void insertChildRenderObject(RenderObjectWrapper child, dynamic slot);
+  void detachChildRenderObject(RenderObjectWrapper child);
 
   void retainStatefulRenderObjectWrapper(RenderObjectWrapper newNode) {
     newNode._renderObject = _renderObject;
@@ -906,18 +952,23 @@ abstract class RenderObjectWrapper extends Widget {
       assert(_renderObject != null);
       _ancestor = findAncestorRenderObjectWrapper();
       if (_ancestor is RenderObjectWrapper)
-        _ancestor.insertChildRoot(this, slot);
+        _ancestor.insertChildRenderObject(this, slot);
     } else {
-      assert(old is RenderObjectWrapper);
+      assert(_canSync(this, old));
       _renderObject = old.renderObject;
       _ancestor = old._ancestor;
       assert(_renderObject != null);
     }
+    assert(() {
+      _renderObject.debugExceptionContext = Component._debugLastComponent;
+      return true;
+    });
     assert(_renderObject == renderObject); // in case a subclass reintroduces it
     assert(renderObject != null);
     assert(mounted);
     _nodeMap[renderObject] = this;
     syncRenderObject(old);
+    super._sync(old, slot);
   }
 
   void updateSlot(dynamic newSlot) {
@@ -928,6 +979,7 @@ abstract class RenderObjectWrapper extends Widget {
   }
 
   void syncRenderObject(RenderObjectWrapper old) {
+    assert(old == null || old.renderObject == renderObject);
     ParentData parentData = null;
     Widget ancestor = parent;
     while (ancestor != null && ancestor is! RenderObjectWrapper) {
@@ -947,6 +999,143 @@ abstract class RenderObjectWrapper extends Widget {
     }
   }
 
+  // for use by subclasses that manage their children using lists
+  void syncChildren(List<Widget> newChildren, List<Widget> oldChildren) {
+
+    // This attempts to diff the new child list (this.children) with
+    // the old child list (old.children), and update our renderObject
+    // accordingly.
+
+    // The cases it tries to optimise for are:
+    //  - the old list is empty
+    //  - the lists are identical
+    //  - there is an insertion or removal of one or more widgets in
+    //    only one place in the list
+    // If a widget with a key is in both lists, it will be synced.
+    // Widgets without keys might be synced but there is no guarantee.
+
+    // The general approach is to sync the entire new list backwards, as follows:
+    // 1. Walk the lists from the top until you no longer have
+    //    matching nodes. We don't sync these yet, but we now know to
+    //    skip them below. We do this because at each sync we need to
+    //    pass the pointer to the new next widget as the slot, which
+    //    we can't do until we've synced the next child.
+    // 2. Walk the lists from the bottom, syncing nodes, until you no
+    //    longer have matching nodes.
+    // At this point we narrowed the old and new lists to the point
+    // where the nodes no longer match.
+    // 3. Walk the narrowed part of the old list to get the list of
+    //    keys and sync null with non-keyed items.
+    // 4. Walk the narrowed part of the new list backwards:
+    //     * Sync unkeyed items with null
+    //     * Sync keyed items with the source if it exists, else with null.
+    // 5. Walk the top list again but backwards, syncing the nodes.
+    // 6. Sync null with any items in the list of keys that are still
+    //    mounted.
+
+    final ContainerRenderObjectMixin renderObject = this.renderObject; // TODO(ianh): Remove this once the analyzer is cleverer
+    assert(renderObject is ContainerRenderObjectMixin);
+
+    int childrenTop = 0;
+    int newChildrenBottom = newChildren.length-1;
+    int oldChildrenBottom = oldChildren.length-1;
+
+    // top of the lists
+    while ((childrenTop <= oldChildrenBottom) && (childrenTop <= newChildrenBottom)) {
+      Widget oldChild = oldChildren[childrenTop];
+      assert(oldChild.mounted);
+      Widget newChild = newChildren[childrenTop];
+      assert(newChild == oldChild || !newChild.mounted);
+      if (!_canSync(oldChild, newChild))
+        break;
+      childrenTop += 1;
+    }
+
+    Widget nextSibling;
+
+    // bottom of the lists
+    while ((childrenTop <= oldChildrenBottom) && (childrenTop <= newChildrenBottom)) {
+      Widget oldChild = oldChildren[oldChildrenBottom];
+      assert(oldChild.mounted);
+      Widget newChild = newChildren[newChildrenBottom];
+      assert(newChild == oldChild || !newChild.mounted);
+      if (!_canSync(oldChild, newChild))
+        break;
+      newChild = syncChild(newChild, oldChild, nextSibling);
+      assert(newChild.mounted);
+      assert(oldChild == newChild || !oldChild.mounted);
+      newChildren[newChildrenBottom] = newChild;
+      nextSibling = newChild;
+      oldChildrenBottom -= 1;
+      newChildrenBottom -= 1;
+    }
+
+    // middle of the lists - old list
+    bool haveOldNodes = childrenTop <= oldChildrenBottom;
+    Map<Key, Widget> oldKeyedChildren;
+    if (haveOldNodes) {
+      oldKeyedChildren = new Map<Key, Widget>();
+      while (childrenTop <= oldChildrenBottom) {
+        Widget oldChild = oldChildren[oldChildrenBottom];
+        assert(oldChild.mounted);
+        if (oldChild.key != null) {
+          oldKeyedChildren[oldChild.key] = oldChild;
+        } else {
+          syncChild(null, oldChild, null);
+        }
+        oldChildrenBottom -= 1;
+      }
+    }
+
+    // middle of the lists - new list
+    while (childrenTop <= newChildrenBottom) {
+      Widget oldChild;
+      Widget newChild = newChildren[newChildrenBottom];
+      if (haveOldNodes) {
+        Key key = newChild.key;
+        if (key != null) {
+          oldChild = oldKeyedChildren[newChild.key];
+          if (oldChild != null) {
+            if (oldChild.runtimeType != newChild.runtimeType)
+              oldChild = null;
+            oldKeyedChildren.remove(key);
+          }
+        }
+      }
+      assert(newChild == oldChild || !newChild.mounted);
+      newChild = syncChild(newChild, oldChild, nextSibling);
+      assert(newChild.mounted);
+      assert(oldChild == newChild || oldChild == null || !oldChild.mounted);
+      newChildren[newChildrenBottom] = newChild;
+      nextSibling = newChild;
+      newChildrenBottom -= 1;
+    }
+    assert(oldChildrenBottom == newChildrenBottom);
+    assert(childrenTop == newChildrenBottom+1);
+
+    // now sync the top of the list
+    while (childrenTop > 0) {
+      childrenTop -= 1;
+      Widget oldChild = oldChildren[childrenTop];
+      assert(oldChild.mounted);
+      Widget newChild = newChildren[childrenTop];
+      assert(newChild == oldChild || !newChild.mounted);
+      assert(_canSync(oldChild, newChild));
+      newChild = syncChild(newChild, oldChild, nextSibling);
+      assert(newChild.mounted);
+      assert(oldChild == newChild || oldChild == null || !oldChild.mounted);
+      newChildren[childrenTop] = newChild;
+      nextSibling = newChild;
+    }
+
+    if (haveOldNodes && !oldKeyedChildren.isEmpty) {
+      for (Widget oldChild in oldKeyedChildren.values)
+        syncChild(null, oldChild, null);
+    }
+
+    assert(renderObject == this.renderObject); // TODO(ianh): Remove this once the analyzer is cleverer
+  }
+
   void dependenciesChanged() {
     // called by Inherited.sync()
     syncRenderObject(this);
@@ -958,10 +1147,10 @@ abstract class RenderObjectWrapper extends Widget {
     super.remove();
   }
 
-  void detachRoot() {
+  void detachRenderObject() {
     assert(_ancestor != null);
     assert(renderObject != null);
-    _ancestor.detachChildRoot(this);
+    _ancestor.detachChildRenderObject(this);
   }
 
 }
@@ -970,11 +1159,11 @@ abstract class LeafRenderObjectWrapper extends RenderObjectWrapper {
 
   LeafRenderObjectWrapper({ Key key }) : super(key: key);
 
-  void insertChildRoot(RenderObjectWrapper child, dynamic slot) {
+  void insertChildRenderObject(RenderObjectWrapper child, dynamic slot) {
     assert(false);
   }
 
-  void detachChildRoot(RenderObjectWrapper child) {
+  void detachChildRenderObject(RenderObjectWrapper child) {
     assert(false);
   }
 
@@ -1002,7 +1191,7 @@ abstract class OneChildRenderObjectWrapper extends RenderObjectWrapper {
     assert(oldChild == null || child == oldChild || oldChild.parent == null);
   }
 
-  void insertChildRoot(RenderObjectWrapper child, dynamic slot) {
+  void insertChildRenderObject(RenderObjectWrapper child, dynamic slot) {
     final renderObject = this.renderObject; // TODO(ianh): Remove this once the analyzer is cleverer
     assert(renderObject is RenderObjectWithChildMixin);
     assert(slot == null);
@@ -1010,25 +1199,20 @@ abstract class OneChildRenderObjectWrapper extends RenderObjectWrapper {
     assert(renderObject == this.renderObject); // TODO(ianh): Remove this once the analyzer is cleverer
   }
 
-  void detachChildRoot(RenderObjectWrapper child) {
+  void detachChildRenderObject(RenderObjectWrapper child) {
     final renderObject = this.renderObject; // TODO(ianh): Remove this once the analyzer is cleverer
     assert(renderObject is RenderObjectWithChildMixin);
     assert(renderObject.child == child.renderObject);
     renderObject.child = null;
     assert(renderObject == this.renderObject); // TODO(ianh): Remove this once the analyzer is cleverer
   }
-
-  void remove() {
-    if (child != null)
-      removeChild(child);
-    super.remove();
-  }
 }
 
 abstract class MultiChildRenderObjectWrapper extends RenderObjectWrapper {
 
-  // In MultiChildRenderObjectWrapper subclasses, slots are RenderObject nodes
-  // to use as the "insert before" sibling in ContainerRenderObjectMixin.add() calls
+  // In MultiChildRenderObjectWrapper subclasses, slots are the Widget
+  // nodes whose RenderObjects are to be used as the "insert before"
+  // sibling in ContainerRenderObjectMixin.add() calls
 
   MultiChildRenderObjectWrapper({ Key key, List<Widget> children })
     : this.children = children == null ? const [] : children,
@@ -1043,29 +1227,21 @@ abstract class MultiChildRenderObjectWrapper extends RenderObjectWrapper {
       walker(child);
   }
 
-  void insertChildRoot(RenderObjectWrapper child, dynamic slot) {
+  void insertChildRenderObject(RenderObjectWrapper child, Widget slot) {
     final renderObject = this.renderObject; // TODO(ianh): Remove this once the analyzer is cleverer
-    assert(slot == null || slot is RenderObject);
+    RenderObject nextSibling = slot != null ? slot.renderObject : null;
+    assert(nextSibling == null || nextSibling is RenderObject);
     assert(renderObject is ContainerRenderObjectMixin);
-    renderObject.add(child.renderObject, before: slot);
+    renderObject.add(child.renderObject, before: nextSibling);
     assert(renderObject == this.renderObject); // TODO(ianh): Remove this once the analyzer is cleverer
   }
 
-  void detachChildRoot(RenderObjectWrapper child) {
+  void detachChildRenderObject(RenderObjectWrapper child) {
     final renderObject = this.renderObject; // TODO(ianh): Remove this once the analyzer is cleverer
     assert(renderObject is ContainerRenderObjectMixin);
     assert(child.renderObject.parent == renderObject);
     renderObject.remove(child.renderObject);
     assert(renderObject == this.renderObject); // TODO(ianh): Remove this once the analyzer is cleverer
-  }
-
-  void remove() {
-    assert(children != null);
-    for (var child in children) {
-      assert(child != null);
-      removeChild(child);
-    }
-    super.remove();
   }
 
   bool _debugHasDuplicateIds() {
@@ -1084,136 +1260,7 @@ abstract class MultiChildRenderObjectWrapper extends RenderObjectWrapper {
 
   void syncRenderObject(MultiChildRenderObjectWrapper old) {
     super.syncRenderObject(old);
-
-    final renderObject = this.renderObject; // TODO(ianh): Remove this once the analyzer is cleverer
-    if (renderObject is! ContainerRenderObjectMixin)
-      return;
-
-    var startIndex = 0;
-    var endIndex = children.length;
-
-    var oldChildren = old == null ? [] : old.children;
-    var oldStartIndex = 0;
-    var oldEndIndex = oldChildren.length;
-
-    RenderObject nextSibling = null;
-    Widget currentNode = null;
-    Widget oldNode = null;
-
-    void sync(int atIndex) {
-      children[atIndex] = syncChild(currentNode, oldNode, nextSibling);
-      assert(children[atIndex] != null);
-      assert(children[atIndex].parent == this);
-      if (atIndex > 0)
-        children[atIndex-1].updateSlot(children[atIndex].renderObject);
-    }
-
-    // Scan backwards from end of list while nodes can be directly synced
-    // without reordering.
-    while (endIndex > startIndex && oldEndIndex > oldStartIndex) {
-      currentNode = children[endIndex - 1];
-      oldNode = oldChildren[oldEndIndex - 1];
-
-      if (currentNode.runtimeType != oldNode.runtimeType || currentNode.key != oldNode.key) {
-        break;
-      }
-
-      endIndex--;
-      oldEndIndex--;
-      sync(endIndex);
-      nextSibling = children[endIndex].renderObject;
-    }
-
-    HashMap<Key, Widget> oldNodeIdMap = null;
-
-    bool oldNodeReordered(Key key) {
-      return oldNodeIdMap != null &&
-             oldNodeIdMap.containsKey(key) &&
-             oldNodeIdMap[key] == null;
-    }
-
-    void advanceOldStartIndex() {
-      oldStartIndex++;
-      while (oldStartIndex < oldEndIndex &&
-             oldNodeReordered(oldChildren[oldStartIndex].key)) {
-        oldStartIndex++;
-      }
-    }
-
-    void ensureOldIdMap() {
-      if (oldNodeIdMap != null)
-        return;
-
-      oldNodeIdMap = new HashMap<Key, Widget>();
-      for (int i = oldStartIndex; i < oldEndIndex; i++) {
-        var node = oldChildren[i];
-        if (node.key != null)
-          oldNodeIdMap.putIfAbsent(node.key, () => node);
-      }
-    }
-
-    bool searchForOldNode() {
-      if (currentNode.key == null)
-        return false; // never re-order these nodes
-
-      ensureOldIdMap();
-      oldNode = oldNodeIdMap[currentNode.key];
-      if (oldNode == null)
-        return false;
-
-      oldNodeIdMap[currentNode.key] = null; // mark it reordered
-      assert(renderObject is ContainerRenderObjectMixin);
-      assert(old.renderObject is ContainerRenderObjectMixin);
-      assert(oldNode.renderObject != null);
-
-      if (old.renderObject == renderObject) {
-        renderObject.move(oldNode.renderObject, before: nextSibling);
-      } else {
-        (old.renderObject as ContainerRenderObjectMixin).remove(oldNode.renderObject); // TODO(ianh): Remove cast once the analyzer is cleverer
-        renderObject.add(oldNode.renderObject, before: nextSibling);
-      }
-
-      return true;
-    }
-
-    // Scan forwards, this time we may re-order;
-    nextSibling = renderObject.firstChild;
-    while (startIndex < endIndex && oldStartIndex < oldEndIndex) {
-      currentNode = children[startIndex];
-      oldNode = oldChildren[oldStartIndex];
-
-      if (currentNode.runtimeType == oldNode.runtimeType && currentNode.key == oldNode.key) {
-        nextSibling = renderObject.childAfter(nextSibling);
-        sync(startIndex);
-        startIndex++;
-        advanceOldStartIndex();
-        continue;
-      }
-
-      oldNode = null;
-      searchForOldNode();
-      sync(startIndex);
-      startIndex++;
-    }
-
-    // New insertions
-    oldNode = null;
-    while (startIndex < endIndex) {
-      currentNode = children[startIndex];
-      sync(startIndex);
-      startIndex++;
-    }
-
-    // Removals
-    currentNode = null;
-    while (oldStartIndex < oldEndIndex) {
-      oldNode = oldChildren[oldStartIndex];
-      syncChild(null, oldNode, null);
-      assert(oldNode.parent == null);
-      advanceOldStartIndex();
-    }
-
-    assert(renderObject == this.renderObject); // TODO(ianh): Remove this once the analyzer is cleverer
+    syncChildren(children, old == null ? const <Widget>[] : old.children);
   }
 
 }
@@ -1276,7 +1323,7 @@ abstract class App extends StatefulComponent {
     SkyBinding.instance.removeEventListener(_handleEvent);
   }
 
-  void syncFields(Component source) { }
+  void syncConstructorArguments(Component source) { }
 
   // Override this to handle back button behavior in your app
   // Call super.onBack() to finish the activity
@@ -1292,7 +1339,7 @@ abstract class AbstractWidgetRoot extends StatefulComponent {
     _scheduleComponentForRender(this);
   }
 
-  void syncFields(AbstractWidgetRoot source) {
+  void syncConstructorArguments(AbstractWidgetRoot source) {
     assert(false);
     // if we get here, it implies that we have a parent
   }

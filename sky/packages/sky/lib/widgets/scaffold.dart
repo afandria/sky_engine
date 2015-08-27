@@ -207,21 +207,16 @@ class Scaffold extends RenderObjectWrapper {
     }
   }
 
-  void insertChildRoot(RenderObjectWrapper child, ScaffoldSlots slot) {
+  void insertChildRenderObject(RenderObjectWrapper child, ScaffoldSlots slot) {
     renderObject[slot] = child != null ? child.renderObject : null;
   }
 
-  void detachChildRoot(RenderObjectWrapper child) {
+  void detachChildRenderObject(RenderObjectWrapper child) {
     final renderObject = this.renderObject; // TODO(ianh): Remove this once the analyzer is cleverer
     assert(renderObject is RenderScaffold);
     assert(renderObject == child.renderObject.parent);
     renderObject.remove(child.renderObject);
     assert(renderObject == this.renderObject); // TODO(ianh): Remove this once the analyzer is cleverer
-  }
-
-  void remove() {
-    walkChildren((Widget child) => removeChild(child));
-    super.remove();
   }
 
   void syncRenderObject(Widget old) {

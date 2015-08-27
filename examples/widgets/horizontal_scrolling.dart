@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'package:sky/painting/box_painter.dart';
 import 'package:sky/widgets.dart';
 
 class Circle extends Component {
@@ -42,9 +41,11 @@ class HorizontalScrollingApp extends App {
     return new Center(
       child: new Container(
         height: 50.0,
-        child: new Flex([
-          new ScrollableBlock(circles, scrollDirection: ScrollDirection.horizontal)
-        ], justifyContent: FlexJustifyContent.end)
+        child: new Row([
+            new Block(circles, scrollDirection: ScrollDirection.horizontal)
+          ],
+          justifyContent: FlexJustifyContent.end
+        )
       )
     );
   }

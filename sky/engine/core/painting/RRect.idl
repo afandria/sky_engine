@@ -6,4 +6,6 @@
   Constructor(),
 ] interface RRect {
   void setRectXY(Rect rect, float xRad, float yRad);
+
+  RRect shift(Offset offset);
 };

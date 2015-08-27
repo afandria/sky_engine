@@ -3,13 +3,12 @@
 // found in the LICENSE file.
 
 import 'package:mojo/mojo/url_response.mojom.dart';
+import 'package:sky_services/media/media.mojom.dart';
 import 'package:sky/mojo/net/fetch.dart';
 import 'package:sky/mojo/shell.dart' as shell;
-import 'package:sky/rendering/box.dart';
-import 'package:sky/rendering/flex.dart';
+import 'package:sky/rendering.dart';
 import 'package:sky/theme/colors.dart' as colors;
-import 'package:sky/widgets/basic.dart';
-import 'package:sky_services/media/media.mojom.dart';
+import 'package:sky/widgets.dart';
 
 // All of these sounds are marked as public domain at soundbible.
 const String chimes = "http://soundbible.com/grab.php?id=2030&type=wav";
@@ -89,10 +88,7 @@ class PianoApp extends App {
       );
     }
 
-    return new Flex(
-      children,
-      direction: FlexDirection.vertical
-    );
+    return new Column(children);
   }
 }
 

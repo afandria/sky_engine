@@ -1,13 +1,18 @@
 library game;
 
+import 'dart:async';
+import 'dart:math' as math;
 import 'dart:sky' as sky;
-import 'dart:math' as Math;
-import 'sprites.dart';
 
 import 'package:sky/rendering/object.dart';
 import 'package:sky/widgets/framework.dart';
-import 'package:sky/widgets/navigator.dart';
-import 'package:sky/animation/curves.dart';
-import 'package:vector_math/vector_math_64.dart';
+import 'package:skysprites/skysprites.dart';
 
-part 'game_demo_world.dart';
+part 'explosions.dart';
+part 'flash.dart';
+part 'game_demo_node.dart';
+part 'game_objects.dart';
+part 'game_object_factory.dart';
+part 'player_state.dart';
+part 'repeated_image.dart';
+part 'star_field.dart';

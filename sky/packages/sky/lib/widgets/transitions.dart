@@ -8,6 +8,8 @@ import 'package:sky/animation/animated_value.dart';
 import 'package:sky/widgets/basic.dart';
 import 'package:vector_math/vector_math.dart';
 
+export 'package:sky/animation/direction.dart' show Direction;
+
 dynamic _maybe(AnimatedValue x) => x != null ? x.value : null;
 
 // A helper class to anchor widgets to one another. Pass an instance of this to
@@ -40,14 +42,14 @@ class _AnchorTransition extends AnimatedComponent {
       watch(transition.performance);
   }
 
-  void syncFields(_AnchorTransition source) {
+  void syncConstructorArguments(_AnchorTransition source) {
     if (transition != null && isWatching(transition.performance))
       unwatch(transition.performance);
     anchoredTo = source.anchoredTo;
     if (transition != null)
       watch(transition.performance);
     child = source.child;
-    super.syncFields(source);
+    super.syncConstructorArguments(source);
   }
 
   Widget build() {
@@ -93,7 +95,7 @@ abstract class TransitionBase extends AnimatedComponent {
     _start();
   }
 
-  void syncFields(TransitionBase source) {
+  void syncConstructorArguments(TransitionBase source) {
     child = source.child;
     onCompleted = source.onCompleted;
     onDismissed = source.onDismissed;
@@ -102,7 +104,7 @@ abstract class TransitionBase extends AnimatedComponent {
       direction = source.direction;
       _start();
     }
-    super.syncFields(source);
+    super.syncConstructorArguments(source);
   }
 
   void _start() {
@@ -150,9 +152,9 @@ class SlideTransition extends TransitionBase {
 
   AnimatedValue<Point> position;
 
-  void syncFields(SlideTransition source) {
+  void syncConstructorArguments(SlideTransition source) {
     position = source.position;
-    super.syncFields(source);
+    super.syncConstructorArguments(source);
   }
 
   Widget buildWithChild(Widget child) {
@@ -185,9 +187,9 @@ class FadeTransition extends TransitionBase {
 
   AnimatedValue<double> opacity;
 
-  void syncFields(FadeTransition source) {
+  void syncConstructorArguments(FadeTransition source) {
     opacity = source.opacity;
-    super.syncFields(source);
+    super.syncConstructorArguments(source);
   }
 
   Widget buildWithChild(Widget child) {
@@ -218,9 +220,9 @@ class ColorTransition extends TransitionBase {
 
   AnimatedColorValue color;
 
-  void syncFields(ColorTransition source) {
+  void syncConstructorArguments(ColorTransition source) {
     color = source.color;
-    super.syncFields(source);
+    super.syncConstructorArguments(source);
   }
 
   Widget buildWithChild(Widget child) {
@@ -256,10 +258,10 @@ class SquashTransition extends TransitionBase {
   AnimatedValue<double> width;
   AnimatedValue<double> height;
 
-  void syncFields(SquashTransition source) {
+  void syncConstructorArguments(SquashTransition source) {
     width = source.width;
     height = source.height;
-    super.syncFields(source);
+    super.syncConstructorArguments(source);
   }
 
   Widget buildWithChild(Widget child) {
@@ -297,10 +299,10 @@ class BuilderTransition extends TransitionBase {
   List<AnimatedValue> variables;
   BuilderFunction builder;
 
-  void syncFields(BuilderTransition source) {
+  void syncConstructorArguments(BuilderTransition source) {
     variables = source.variables;
     builder = source.builder;
-    super.syncFields(source);
+    super.syncConstructorArguments(source);
   }
 
   Widget buildWithChild(Widget child) {

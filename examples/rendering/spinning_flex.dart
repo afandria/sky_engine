@@ -4,11 +4,8 @@
 
 import 'dart:sky' as sky;
 
-import 'package:sky/base/scheduler.dart';
-import 'package:sky/rendering/box.dart';
-import 'package:sky/rendering/flex.dart';
-import 'package:sky/rendering/sky_binding.dart';
-import 'package:vector_math/vector_math.dart';
+import 'package:sky/base/scheduler.dart' as scheduler;
+import 'package:sky/rendering.dart';
 
 import 'solid_color_box.dart';
 
@@ -34,7 +31,7 @@ void main() {
 
   new SkyBinding(root: root);
 
-  addPersistentFrameCallback(rotate);
+  scheduler.addPersistentFrameCallback(rotate);
 }
 
 void rotate(double timeStamp) {

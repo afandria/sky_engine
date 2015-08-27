@@ -4,10 +4,7 @@
 
 import 'dart:sky' as sky;
 
-import 'package:sky/rendering/box.dart';
-import 'package:sky/rendering/flex.dart';
-import 'package:sky/rendering/sky_binding.dart';
-import 'package:vector_math/vector_math.dart';
+import 'package:sky/rendering.dart';
 
 void main() {
   RenderDecoratedBox green = new RenderDecoratedBox(
@@ -20,7 +17,9 @@ void main() {
 
   Matrix4 transform = new Matrix4.identity();
   RenderTransform spin = new RenderTransform(
-      transform: transform, child: box);
+    transform: transform,
+    child: box
+  );
   spin.rotateZ(1.0);
 
   RenderFlex flex = new RenderFlex();

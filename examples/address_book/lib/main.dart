@@ -20,7 +20,7 @@ class Field extends Component {
   final String placeholder;
 
   Widget build() {
-    return new Flex([
+    return new Row([
         new Padding(
           padding: const EdgeDims.symmetric(horizontal: 16.0),
           child: new Icon(type: icon, size: 24)
@@ -31,8 +31,7 @@ class Field extends Component {
             placeholder: placeholder
           )
         )
-      ],
-      direction: FlexDirection.horizontal
+      ]
     );
   }
 }
@@ -54,7 +53,7 @@ class AddressBookApp extends App {
         showDialog(navigator, (navigator) {
           return new Dialog(
             title: new Text("Describe your picture"),
-            content: new ScrollableBlock([
+            content: new Block([
               new Field(inputKey: fillKey, icon: "editor/format_color_fill", placeholder: "Color"),
               new Field(inputKey: emoticonKey, icon: "editor/insert_emoticon", placeholder: "Emotion"),
             ]),
@@ -88,7 +87,7 @@ class AddressBookApp extends App {
 
   Widget buildBody(Navigator navigator) {
     return new Material(
-      child: new ScrollableBlock([
+      child: new Block([
         new AspectRatio(
           aspectRatio: 16.0 / 9.0,
           child: new Container(
@@ -135,8 +134,8 @@ class AddressBookApp extends App {
       data: theme,
       child: new DefaultTextStyle(
         style: typography.error, // if you see this, you've forgotten to correctly configure the text style!
-        child: new TaskDescription(
-          label: 'Address Book',
+        child: new Title(
+          title: 'Address Book',
           child: new Navigator(_navigationState)
         )
       )

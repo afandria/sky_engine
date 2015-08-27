@@ -5,9 +5,7 @@
 import 'dart:math' as math;
 import 'dart:sky' as sky;
 
-import 'package:sky/rendering/box.dart';
-import 'package:sky/rendering/object.dart';
-import 'package:sky/rendering/sky_binding.dart';
+import 'package:sky/rendering.dart';
 
 const double kTwoPi = 2 * math.PI;
 
@@ -165,6 +163,14 @@ class RenderSectorWithChildren extends RenderDecoratedSector with ContainerRende
       assert(child.parentData is SectorChildListParentData);
       if (child.hitTest(result, radius: radius, theta: theta))
         return;
+      child = child.parentData.previousSibling;
+    }
+  }
+
+  void visitChildren(RenderObjectVisitor visitor) {
+    RenderSector child = lastChild;
+    while (child != null) {
+      visitor(child);
       child = child.parentData.previousSibling;
     }
   }
@@ -413,6 +419,10 @@ class RenderBoxToRenderSectorAdapter extends RenderBox {
   void setupParentData(RenderObject child) {
     if (child.parentData is! SectorParentData)
       child.parentData = new SectorParentData();
+  }
+
+  void visitChildren(RenderObjectVisitor visitor) {
+    visitor(_child);
   }
 
   double getMinIntrinsicWidth(BoxConstraints constraints) {

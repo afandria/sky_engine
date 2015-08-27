@@ -8,7 +8,7 @@
 #include "base/files/file_util.h"
 #include "base/strings/string_util.h"
 #include "base/threading/worker_pool.h"
-#include "mojo/common/data_pipe_utils.h"
+#include "mojo/data_pipe_utils/data_pipe_utils.h"
 #include "sky/engine/tonic/dart_converter.h"
 
 namespace sky {
@@ -42,8 +42,10 @@ base::FilePath SimplifyPath(const base::FilePath& path) {
 DartLibraryProviderFiles::DartLibraryProviderFiles(
     const base::FilePath& package_root)
     : package_root_(package_root) {
-    CHECK(base::DirectoryExists(package_root_)) << "Invalid --package-root "
-      << "\"" << package_root_.LossyDisplayName() << "\"";
+    if (package_root_.empty())
+      package_root_ = base::FilePath(FILE_PATH_LITERAL("packages"));
+    if (!base::DirectoryExists(package_root_))
+      package_root_ = base::FilePath();
 }
 
 DartLibraryProviderFiles::~DartLibraryProviderFiles() {
@@ -65,7 +67,15 @@ void DartLibraryProviderFiles::GetLibraryAsStream(
 std::string DartLibraryProviderFiles::CanonicalizePackageURL(std::string url) {
   DCHECK(base::StartsWithASCII(url, "package:", true));
   base::ReplaceFirstSubstringAfterOffset(&url, 0, "package:", "");
+  CHECK(!package_root_.empty())
+      << "Cannot import packages without a valid --package-root";
   return package_root_.Append(url).AsUTF8Unsafe();
+}
+
+std::string DartLibraryProviderFiles::CanonicalizeFileURL(std::string url) {
+  DCHECK(base::StartsWithASCII(url, "file:", true));
+  base::ReplaceFirstSubstringAfterOffset(&url, 0, "file:", "");
+  return url;
 }
 
 Dart_Handle DartLibraryProviderFiles::CanonicalizeURL(Dart_Handle library,
@@ -75,6 +85,8 @@ Dart_Handle DartLibraryProviderFiles::CanonicalizeURL(Dart_Handle library,
     return url;
   if (base::StartsWithASCII(string, "package:", true))
     return blink::StdStringToDart(CanonicalizePackageURL(string));
+  if (base::StartsWithASCII(string, "file:", true))
+    return blink::StdStringToDart(CanonicalizeFileURL(string));
   base::FilePath base_path(blink::StdStringFromDart(Dart_LibraryUrl(library)));
   base::FilePath resolved_path = base_path.DirName().Append(string);
   base::FilePath normalized_path = SimplifyPath(resolved_path);

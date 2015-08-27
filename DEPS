@@ -19,8 +19,10 @@
 
 vars = {
   'chromium_git': 'https://chromium.googlesource.com',
+  'mojo_sdk_revision': 'eb7dac2f90187db12c0d29792a0bd999bc96cbe5',
+  'mojo_devtools_revision': '2feda37728d3e551ef543b8f6c4f4b20eaa2d81f',
   'skia_revision': '29ccdf86ab0a1649fd775c9431891bacb1391e99',
-  'dart_revision': '95c951ad190f156eb61b99203c2e4948211c44a7',
+  'dart_revision': 'cab003366785773ace16b5305ac1f33c228cac54',
   'dart_observatory_packages_revision': 'cdc4b3d4c15b9c0c8e7702dff127b440afbb7485',
 
   'buildtools_revision': '5215ee866bc3e8eb4a7f124212845abf4029e60b',
@@ -30,6 +32,7 @@ vars = {
 # If you need to add a new host, contact chrome infrastructure team.
 allowed_hosts = [
   'chromium.googlesource.com',
+  'github.com',
 ]
 
 deps = {
@@ -52,6 +55,14 @@ deps = {
    Var('chromium_git') +
    '/external/github.com/dart-lang/observatory_pub_packages' + '@' +
    Var('dart_observatory_packages_revision'),
+
+  'src/mojo/public':
+   Var('chromium_git') + '/external/github.com/domokit/mojo_sdk' + '@' +
+   Var('mojo_sdk_revision'),
+
+  'src/mojo/devtools':
+   'https://github.com/domokit/devtools.git' + '@' +
+   Var('mojo_devtools_revision'),
 
   'src/third_party/skia':
    Var('chromium_git') + '/skia.git' + '@' +  Var('skia_revision'),

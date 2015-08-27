@@ -46,10 +46,9 @@ very commonly used:
  * `Text`: The `Text` widget lets you create a run of styled text within your
    application.
 
- * `Flex`: The `Flex` widget lets you create flexible layouts in both the
-   horizontal and vertical direction. Its design is based on the web's flexbox
-   layout model. You can also use the simpler `Block` widget to create vertical
-   layouts of inflexible items.
+ * `Row`, `Column`: These flex widgets let you create flexible layouts
+   in both the horizontal (`Row`) and vertical (`Column`) directions.
+   Its design is based on the web's flexbox layout model.
 
  * `Container`: The `Container` widget lets you create rectangular visual
    element. A container can be decorated with a `BoxDecoration`, such as a
@@ -75,7 +74,7 @@ class MyToolBar extends Component {
       ),
       height: 56.0,
       padding: const EdgeDims.symmetric(horizontal: 8.0),
-      child: new Flex([
+      child: new Row([
         new NetworkImage(src: 'menu.png', width: 25.0, height: 25.0),
         new Flexible(child: new Text('My awesome toolbar')),
         new NetworkImage(src: 'search.png', width: 25.0, height: 25.0),
@@ -85,14 +84,15 @@ class MyToolBar extends Component {
 }
 ```
 
-The `MyToolBar` component creates a cyan `Container` with a height of 56
-device-independent pixels with an internal padding of 8 pixels, both on the
-left and the right. Inside the container, `MyToolBar` uses a `Flex` layout
-in the (default) horizontal direction. The middle child, the `Text` widget, is
-marked as `Flexible`, which means it expands to fill any remaining available
-space that hasn't been consumed by the inflexible children. You can have
-multiple `Flexible` children and determine the ratio in which they consume the
-available space using the `flex` argument to `Flexible`.
+The `MyToolBar` component creates a cyan `Container` with a height of
+56 device-independent pixels with an internal padding of 8 pixels,
+both on the left and the right. Inside the container, `MyToolBar` uses
+a `Row` layout. The middle child, the `Text` widget, is marked as
+`Flexible`, which means it expands to fill any remaining available
+space that hasn't been consumed by the inflexible children. You can
+have multiple `Flexible` children and determine the ratio in which
+they consume the available space using the `flex` argument to
+`Flexible`.
 
 To use this component, we simply create an instance of `MyToolBar` in a `build`
 function:
@@ -207,7 +207,7 @@ button:
   Widget build() {
     return new MyButton(
       child: new ShrinkWrapWidth(
-        child: new Flex([
+        child: new Row([
           new NetworkImage(src: 'thumbs-up.png', width: 25.0, height: 25.0),
           new Container(
             padding: const EdgeDims.only(left: 10.0),
@@ -267,12 +267,12 @@ class MyDialog extends StatefulComponent {
     });
   }
 
-  void syncFields(MyDialog source) {
+  void syncConstructorArguments(MyDialog source) {
     onDismissed = source.onDismissed;
   }
 
   Widget build() {
-    return new Flex([
+    return new Row([
       new MyCheckbox(
         value: _checkboxValue,
         onChanged: _handleCheckboxValueChanged
@@ -319,9 +319,9 @@ Let's walk through the differences in `MyDialog` caused by its being stateful:
    `build` function, which means the user interface might not update to reflect
    the changed state.
 
- * `MyDialog` implements the `syncFields` member function. To understand
-   `syncFields`, we'll need to dive a bit deeper into how the `build` function
-   is used by the framework.
+ * `MyDialog` implements the `syncConstructorArguments` member function. To
+   understand `syncConstructorArguments`, we'll need to dive a bit deeper into
+   how the `build` function is used by the framework.
 
    A component's `build` function returns a tree of widgets that represent a
    "virtual" description of its appearance. The first time the framework calls
@@ -337,28 +337,29 @@ Let's walk through the differences in `MyDialog` caused by its being stateful:
    hierchy. Old _stateful_ components, however, cannot simply be discarded
    because they contain state that needs to be preserved. Instead, the old
    stateful components are retained in the widget hierarchy and asked to
-   `syncFields` with the new instance of the component created by the parent in
-   its `build` function.
+   `syncConstructorArguments` with the new instance of the component created by
+   the parent in its `build` function.
 
-   Without `syncFields`, the new values the parent component passed to the
-   `MyDialog` constructor in the parent's `build` function would be lost because
-   they would be stored only as member variables on the new instance of the
-   component, which is not retained in the component hiearchy. Therefore, the
-   `syncFields` function in a component should update `this` to account for the
-   new values the parent passed to `source` because `source` is the authorative
-   source of those values.
+   Without `syncConstructorArguments`, the new values the parent component
+   passed to the `MyDialog` constructor in the parent's `build` function would
+   be lost because they would be stored only as member variables on the new
+   instance of the component, which is not retained in the component hiearchy.
+   Therefore, the `syncConstructorArguments` function in a component should
+   update `this` to account for the new values the parent passed to `source`
+   because `source` is the authorative source of those values.
 
    By convention, components typically store the values they receive from their
    parents in public member variables and their own internal state in private
-   member variables. Therefore, a typical `syncFields` implementation will copy
-   the public, but not the private, member variables from `source`. When
-   following this convention, there is no need to copy over the private member
-   variables because those represent the internal state of the object and `this`
-   is the authoritative source of that state.
+   member variables. Therefore, a typical `syncConstructorArguments`
+   implementation will copy the public, but not the private, member variables
+   from `source`. When following this convention, there is no need to copy over
+   the private member variables because those represent the internal state of
+   the object and `this` is the authoritative source of that state.
 
    When implementing a `StatefulComponent`, make sure to call
-   `super.syncFields(source)` from within your `syncFields()` method,
-   unless you are extending `StatefulComponent` directly.
+   `super.syncConstructorArguments(source)` from within your
+   `syncConstructorArguments()` method, unless you are extending
+   `StatefulComponent` directly.
 
 Finally, when the user taps on the "Save" button, `MyDialog` follows the same
 pattern as `MyCheckbox` and calls a function passed in by its parent component
@@ -382,9 +383,9 @@ efficient (and less error-prone) than initializing that state during the
 component's constructor because parent executes the component's constructor each
 time the parent rebuilds even though the framework mounts only the first
 instance into the widget hierarchy. (Instead of mounting later instances, the
-framework passes them to the original instance in `syncFields` so that the first
-instance of the component can incorporate the values passed by the parent to the
-component's constructor.)
+framework passes them to the original instance in `syncConstructorArguments` so
+that the first instance of the component can incorporate the values passed by
+the parent to the component's constructor.)
 
 Components often override `didUnmount` to release resources or to cancel
 subscriptions to event streams from outside the widget hierachy. When overriding
@@ -431,6 +432,56 @@ copies of a particular widget to fill its visible region:
    Moreover, syncing the entries semantically means that state retained in
    stateful subcomponents will remain attached to the same semantic entry rather
    than the entry in the same numerical position in the viewport.
+
+Widgets for Applications
+------------------------
+
+There are some widgets that do not correspond to on-screen pixels but that are
+nonetheless useful for building applications.
+
+* `Theme`: Takes a [ThemeData](../theme/README.md) object in its `data` argument, to configure the Material Design theme of the rest of the application (as given in the `child` argument).
+* `TaskDescription`: Takes a `label` that names the application for the purpose of the Android task switcher. The colour of the application as used in the system UI is taken from the current `Theme`.
+* `Navigator`: Takes a single argument, which must be a long-lived instance of `NavigatorState`. This object choreographs how the application goes from screen to screen (e.g. from the main screen to a settings screen), as well as modal dialogs, drawer state, and anything else that responds to the system "back" button. By convention the `NavigatorState` object is a private member variable of the class that inherits from `App`, initialized in the `initState()` function. The `NavigatorState` constructor takes a list of `Route` objects, each of which takes a `name` argument giving a path to identify the window (e.g. "/" for the home screen, "/settings" for the settings screen, etc), and a `builder` argument that takes a method which itself takes a `navigator` argument and a `route` argument and returns a `Widget` representing that screen.
+
+Putting this together, a basic application becomes:
+```
+dart
+import 'package:sky/widgets.dart';
+
+class DemoApp extends App {
+
+  NavigationState _state;
+  void initState() {
+    _state = new NavigationState([
+      new Route(
+        name: '/',
+        builder: (navigator, route) {
+          return new Center(child: new Text('Hello Slightly More Elaborate World'));
+        }
+      )
+    ]);
+    super.initState();
+  }
+
+  Widget build() {
+    return new Theme(
+      data: new ThemeData(
+        brightness: ThemeBrightness.light
+      ),
+      child: new TaskDescription(
+        label: 'Sky Demo',
+        child: new Navigator(_state)
+      )
+    );
+  }
+
+}
+
+void main() {
+  runApp(new DemoApp());
+}
+```
+
 
 Useful debugging tools
 ----------------------

@@ -13,6 +13,7 @@ class BlockParentData extends BoxParentData with ContainerParentDataMixin<Render
 enum BlockDirection { horizontal, vertical }
 
 typedef double _ChildSizingFunction(RenderBox child, BoxConstraints constraints);
+typedef double _Constrainer(double value);
 
 abstract class RenderBlockBase extends RenderBox with ContainerRenderObjectMixin<RenderBox, BlockParentData>,
                                                       RenderBoxContainerDefaultsMixin<RenderBox, BlockParentData> {
@@ -41,12 +42,22 @@ abstract class RenderBlockBase extends RenderBox with ContainerRenderObjectMixin
     }
   }
 
-  bool get _isVertical => _direction == BlockDirection.vertical;
+  bool get isVertical => _direction == BlockDirection.vertical;
 
   BoxConstraints _getInnerConstraints(BoxConstraints constraints) {
-    if (_isVertical)
+    if (isVertical)
       return new BoxConstraints.tightFor(width: constraints.constrainWidth(constraints.maxWidth));
     return new BoxConstraints.tightFor(height: constraints.constrainHeight(constraints.maxHeight));
+  }
+
+  double get _mainAxisExtent {
+    RenderBox child = lastChild;
+    if (child == null)
+      return 0.0;
+    BoxParentData parentData = child.parentData;
+    return isVertical ?
+        parentData.position.y + child.size.height :
+        parentData.position.x + child.size.width;
   }
 
   void performLayout() {
@@ -56,12 +67,17 @@ abstract class RenderBlockBase extends RenderBox with ContainerRenderObjectMixin
     while (child != null) {
       child.layout(innerConstraints, parentUsesSize: true);
       assert(child.parentData is BlockParentData);
-      child.parentData.position = _isVertical ? new Point(0.0, position) : new Point(position, 0.0);
-      position += _isVertical ? child.size.height : child.size.width;
+      child.parentData.position = isVertical ? new Point(0.0, position) : new Point(position, 0.0);
+      position += isVertical ? child.size.height : child.size.width;
       child = child.parentData.nextSibling;
     }
+    size = isVertical ?
+        constraints.constrain(new Size(constraints.maxWidth, _mainAxisExtent)) :
+        constraints.constrain(new Size(_mainAxisExtent, constraints.maxHeight));
+    assert(!size.isInfinite);
   }
 
+  String debugDescribeSettings(String prefix) => '${super.debugDescribeSettings(prefix)}${prefix}direction: ${direction}\n';
 }
 
 class RenderBlock extends RenderBlockBase {
@@ -73,7 +89,7 @@ class RenderBlock extends RenderBlockBase {
 
   double _getIntrinsicCrossAxis(BoxConstraints constraints, _ChildSizingFunction childSize) {
     double extent = 0.0;
-    BoxConstraints innerConstraints = _isVertical ? constraints.widthConstraints() : constraints.heightConstraints();
+    BoxConstraints innerConstraints = isVertical ? constraints.widthConstraints() : constraints.heightConstraints();
     RenderBox child = firstChild;
     while (child != null) {
       extent = math.max(extent, childSize(child, innerConstraints));
@@ -88,11 +104,11 @@ class RenderBlock extends RenderBlockBase {
     BoxConstraints innerConstraints = _getInnerConstraints(constraints);
     RenderBox child = firstChild;
     while (child != null) {
-      double childExtent = _isVertical ?
+      double childExtent = isVertical ?
         child.getMinIntrinsicHeight(innerConstraints) :
         child.getMinIntrinsicWidth(innerConstraints);
       assert(() {
-        if (_isVertical)
+        if (isVertical)
           return childExtent == child.getMaxIntrinsicHeight(innerConstraints);
         return childExtent == child.getMaxIntrinsicWidth(innerConstraints);
       });
@@ -104,7 +120,7 @@ class RenderBlock extends RenderBlockBase {
   }
 
   double getMinIntrinsicWidth(BoxConstraints constraints) {
-    if (_isVertical) {
+    if (isVertical) {
       return _getIntrinsicCrossAxis(constraints,
         (c, innerConstraints) => c.getMinIntrinsicWidth(innerConstraints));
     }
@@ -112,7 +128,7 @@ class RenderBlock extends RenderBlockBase {
   }
 
   double getMaxIntrinsicWidth(BoxConstraints constraints) {
-    if (_isVertical) {
+    if (isVertical) {
       return _getIntrinsicCrossAxis(constraints,
           (c, innerConstraints) => c.getMaxIntrinsicWidth(innerConstraints));
     }
@@ -120,14 +136,14 @@ class RenderBlock extends RenderBlockBase {
   }
 
   double getMinIntrinsicHeight(BoxConstraints constraints) {
-    if (_isVertical)
+    if (isVertical)
       return _getIntrinsicMainAxis(constraints);
     return _getIntrinsicCrossAxis(constraints,
         (c, innerConstraints) => c.getMinIntrinsicWidth(innerConstraints));
   }
 
   double getMaxIntrinsicHeight(BoxConstraints constraints) {
-    if (_isVertical)
+    if (isVertical)
       return _getIntrinsicMainAxis(constraints);
     return _getIntrinsicCrossAxis(constraints,
         (c, innerConstraints) => c.getMaxIntrinsicWidth(innerConstraints));
@@ -137,23 +153,11 @@ class RenderBlock extends RenderBlockBase {
     return defaultComputeDistanceToFirstActualBaseline(baseline);
   }
 
-  double get _mainAxisExtent {
-    RenderBox child = lastChild;
-    if (child == null)
-      return 0.0;
-    BoxParentData parentData = child.parentData;
-    return _isVertical ?
-        parentData.position.y + child.size.height :
-        parentData.position.x + child.size.width;
-  }
-
   void performLayout() {
-    assert(_isVertical ? constraints.maxHeight >= double.INFINITY : constraints.maxWidth >= double.INFINITY);
+    assert((isVertical ? constraints.maxHeight >= double.INFINITY : constraints.maxWidth >= double.INFINITY) &&
+           'RenderBlock does not clip or resize its children, so it must be placed in a parent that does not constrain ' +
+           'the block\'s main direction. You probably want to put the RenderBlock inside a RenderViewport.' is String);
     super.performLayout();
-    size = _isVertical ?
-        constraints.constrain(new Size(constraints.maxWidth, _mainAxisExtent)) :
-        constraints.constrain(new Size(_mainAxisExtent, constraints.maxHeight));
-    assert(!size.isInfinite);
   }
 
   void paint(PaintingContext context, Offset offset) {
@@ -168,17 +172,32 @@ class RenderBlock extends RenderBlockBase {
 
 class RenderBlockViewport extends RenderBlockBase {
 
-  // sizes itself to the given constraints
-  // at the start of layout, calls callback
+  // This class invokes a callbacks for layout and intrinsic
+  // dimensions. The main callback (constructor argument and property
+  // called "callback") is expected to modify the element's child
+  // list. The regular block layout algorithm is then applied to the
+  // children. The intrinsic dimension callbacks are called to
+  // determine intrinsic dimensions; if no value can be returned, they
+  // should not be set or, if set, should return null.
 
   RenderBlockViewport({
     LayoutCallback callback,
+    DimensionCallback totalExtentCallback,
+    DimensionCallback maxCrossAxisDimensionCallback,
+    DimensionCallback minCrossAxisDimensionCallback,
+    double startOffset: 0.0,
     List<RenderBox> children,
-    double startOffset: 0.0
-  }) : _callback = callback, _startOffset = startOffset, super(children: children);
+    BlockDirection direction: BlockDirection.vertical
+  }) : _callback = callback,
+       _totalExtentCallback = totalExtentCallback,
+       _maxCrossAxisDimensionCallback = maxCrossAxisDimensionCallback,
+       _minCrossAxisDimensionCallback = minCrossAxisDimensionCallback,
+       _startOffset = startOffset,
+       super(children: children, direction: direction);
 
   bool _inCallback = false;
 
+  // Called during layout. Mutate the child list appropriately.
   LayoutCallback _callback;
   LayoutCallback get callback => _callback;
   void set callback(LayoutCallback value) {
@@ -186,6 +205,44 @@ class RenderBlockViewport extends RenderBlockBase {
     if (value == _callback)
       return;
     _callback = value;
+    markNeedsLayout();
+  }
+
+  // Return the sum of the extent of all the children that could be included by the callback in one go.
+  // The extent is the dimension in the direction given by the 'direction' property.
+  DimensionCallback _totalExtentCallback;
+  DimensionCallback get totalExtentCallback => _totalExtentCallback;
+  void set totalExtentCallback(DimensionCallback value) {
+    assert(!_inCallback);
+    if (value == _totalExtentCallback)
+      return;
+    _totalExtentCallback = value;
+    markNeedsLayout();
+  }
+
+  // Return the minimum dimension across all the children that could
+  // be included in one go, in the direction orthogonal to that given
+  // by the 'direction' property.
+  DimensionCallback _minCrossAxisDimensionCallback;
+  DimensionCallback get minCrossAxisDimensionCallback => _minCrossAxisDimensionCallback;
+  void set minCrossAxisDimensionCallback(DimensionCallback value) {
+    assert(!_inCallback);
+    if (value == _minCrossAxisDimensionCallback)
+      return;
+    _minCrossAxisDimensionCallback = value;
+    markNeedsLayout();
+  }
+
+  // Return the maximum dimension across all the children that could
+  // be included in one go, in the direction orthogonal to that given
+  // by the 'direction' property.
+  DimensionCallback _maxCrossAxisDimensionCallback;
+  DimensionCallback get maxCrossAxisDimensionCallback => _maxCrossAxisDimensionCallback;
+  void set maxCrossAxisDimensionCallback(DimensionCallback value) {
+    assert(!_inCallback);
+    if (value == _maxCrossAxisDimensionCallback)
+      return;
+    _maxCrossAxisDimensionCallback = value;
     markNeedsLayout();
   }
 
@@ -200,20 +257,51 @@ class RenderBlockViewport extends RenderBlockBase {
       markNeedsPaint();
   }
 
+  double _getIntrinsicDimension(BoxConstraints constraints, DimensionCallback intrinsicCallback, _Constrainer constrainer) {
+    assert(!_inCallback);
+    double result;
+    if (intrinsicCallback == null) {
+      assert(() {
+        'RenderBlockViewport does not support returning intrinsic dimensions if the relevant callbacks have not been specified.';
+        return false;
+      });
+      return constrainer(0.0);
+    }
+    try {
+      _inCallback = true;
+      result = intrinsicCallback(constraints);
+      if (result == null)
+        result = constrainer(0.0);
+      else
+        result = constrainer(result);
+    } finally {
+      _inCallback = false;
+    }
+    return result;
+  }
+
   double getMinIntrinsicWidth(BoxConstraints constraints) {
-    return constraints.constrainWidth();
+    if (isVertical)
+      return _getIntrinsicDimension(constraints, minCrossAxisDimensionCallback, constraints.constrainWidth);
+    return constraints.constrainWidth(0.0);
   }
 
   double getMaxIntrinsicWidth(BoxConstraints constraints) {
-    return constraints.constrainWidth();
+    if (isVertical)
+      return _getIntrinsicDimension(constraints, maxCrossAxisDimensionCallback, constraints.constrainWidth);
+    return _getIntrinsicDimension(constraints, totalExtentCallback, constraints.constrainWidth);
   }
 
   double getMinIntrinsicHeight(BoxConstraints constraints) {
-    return constraints.constrainHeight();
+    if (!isVertical)
+      return _getIntrinsicDimension(constraints, minCrossAxisDimensionCallback, constraints.constrainHeight);
+    return constraints.constrainHeight(0.0);
   }
 
   double getMaxIntrinsicHeight(BoxConstraints constraints) {
-    return constraints.constrainHeight();
+    if (!isVertical)
+      return _getIntrinsicDimension(constraints, maxCrossAxisDimensionCallback, constraints.constrainHeight);
+    return _getIntrinsicDimension(constraints, totalExtentCallback, constraints.constrainHeight);
   }
 
   // We don't override computeDistanceToActualBaseline(), because we
@@ -221,16 +309,8 @@ class RenderBlockViewport extends RenderBlockBase {
   // scroll the RenderBlockViewport, it would shift in its parent if
   // the parent was baseline-aligned, which makes no sense.
 
-  bool get sizedByParent => true;
-
-  void performResize() {
-    size = constraints.biggest;
-    assert(!size.isInfinite);
-  }
-
   bool get debugDoesLayoutWithCallback => true;
   void performLayout() {
-    assert(constraints.maxHeight < double.INFINITY);
     if (_callback != null) {
       try {
         _inCallback = true;
@@ -258,4 +338,5 @@ class RenderBlockViewport extends RenderBlockBase {
     defaultHitTestChildren(result, position: position + new Offset(0.0, -startOffset));
   }
 
+  String debugDescribeSettings(String prefix) => '${super.debugDescribeSettings(prefix)}${prefix}startOffset: ${startOffset}\n';
 }

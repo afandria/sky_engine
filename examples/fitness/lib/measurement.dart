@@ -17,6 +17,7 @@ class Measurement extends FitnessItem {
   Map toJson() {
     Map json = super.toJson();
     json['weight'] = weight;
+    json['type'] = runtimeType.toString();
     return json;
   }
 
@@ -45,10 +46,59 @@ class MeasurementRow extends FitnessItemRow {
         )
       )
     ];
-    return new Flex(
+    return new Row(
       children,
       alignItems: FlexAlignItems.baseline,
       textBaseline: DefaultTextStyle.of(this).textBaseline
+    );
+  }
+}
+
+class MeasurementDateDialog extends StatefulComponent {
+  MeasurementDateDialog({ this.navigator, this.previousDate });
+
+  Navigator navigator;
+  DateTime previousDate;
+
+  @override
+  void initState() {
+    _selectedDate = previousDate;
+  }
+
+  void syncConstructorArguments(MeasurementDateDialog source) {
+    navigator = source.navigator;
+    previousDate = source.previousDate;
+  }
+
+  DateTime _selectedDate;
+
+  void _handleDateChanged(DateTime value) {
+    setState(() {
+      _selectedDate = value;
+    });
+  }
+
+  Widget build() {
+    return new Dialog(
+      content: new DatePicker(
+        selectedDate: _selectedDate,
+        firstDate: new DateTime(2015, 8),
+        lastDate: new DateTime(2101),
+        onChanged: _handleDateChanged
+      ),
+      contentPadding: EdgeDims.zero,
+      actions: [
+        new FlatButton(
+          child: new Text('CANCEL'),
+          onPressed: navigator.pop
+        ),
+        new FlatButton(
+          child: new Text('OK'),
+          onPressed: () {
+            navigator.pop(_selectedDate);
+          }
+        ),
+      ]
     );
   }
 }
@@ -60,12 +110,13 @@ class MeasurementFragment extends StatefulComponent {
   Navigator navigator;
   FitnessItemHandler onCreated;
 
-  void syncFields(MeasurementFragment source) {
+  void syncConstructorArguments(MeasurementFragment source) {
     navigator = source.navigator;
     onCreated = source.onCreated;
   }
 
   String _weight = "";
+  DateTime _when = new DateTime.now();
   String _errorMessage = null;
 
   EventDisposition _handleSave() {
@@ -79,7 +130,7 @@ class MeasurementFragment extends StatefulComponent {
       });
       return EventDisposition.processed;
     }
-    onCreated(new Measurement(when: new DateTime.now(), weight: parsedWeight));
+    onCreated(new Measurement(when: _when, weight: parsedWeight));
     navigator.pop();
     return EventDisposition.processed;
   }
@@ -107,23 +158,44 @@ class MeasurementFragment extends StatefulComponent {
 
   static final GlobalKey weightKey = new GlobalKey();
 
+  EventDisposition _handleDatePressed(_) {
+    showDialog(navigator, (navigator) {
+      return new MeasurementDateDialog(navigator: navigator, previousDate: _when);
+    }).then((DateTime value) {
+      if (value == null)
+        return;
+      setState(() {
+        _when = value;
+      });
+    });
+    return EventDisposition.processed;
+  }
+
   Widget buildBody() {
-    Measurement measurement = new Measurement(when: new DateTime.now());
+    Measurement measurement = new Measurement(when: _when);
+    // TODO(jackson): Revisit the layout of this pane to be more maintainable
     return new Material(
       type: MaterialType.canvas,
-      child: new ScrollableViewport(
-        child: new Container(
-          padding: const EdgeDims.all(20.0),
-          child: new Block([
-            new Text(measurement.displayDate),
-            new Input(
-              key: weightKey,
-              placeholder: 'Enter weight',
-              keyboardType: KeyboardType_NUMBER,
-              onChanged: _handleWeightChanged
-            ),
-          ])
-        )
+      child: new Container(
+        padding: const EdgeDims.all(20.0),
+        child: new Column([
+          new Listener(
+            onGestureTap: _handleDatePressed,
+            child: new Container(
+              height: 50.0,
+              child: new Column([
+                new Text('Measurement Date'),
+                new Text(measurement.displayDate, style: Theme.of(this).text.caption),
+              ], alignItems: FlexAlignItems.start)
+            )
+          ),
+          new Input(
+            key: weightKey,
+            placeholder: 'Enter weight',
+            keyboardType: KeyboardType_NUMBER,
+            onChanged: _handleWeightChanged
+          ),
+        ], alignItems: FlexAlignItems.stretch)
       )
     );
   }
@@ -132,7 +204,7 @@ class MeasurementFragment extends StatefulComponent {
     if (_errorMessage == null)
       return null;
     // TODO(jackson): This doesn't show up, unclear why.
-    return new SnackBar(content: new Text(_errorMessage));
+    return new SnackBar(content: new Text(_errorMessage), showing: true);
   }
 
   Widget build() {

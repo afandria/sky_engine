@@ -4,10 +4,11 @@
 
 import 'dart:sky' as sky;
 
-import 'package:sky/base/scheduler.dart' as scheduler;
 import 'package:sky/base/hit_test.dart';
+import 'package:sky/base/scheduler.dart' as scheduler;
 import 'package:sky/rendering/box.dart';
 import 'package:sky/rendering/object.dart';
+import 'package:sky/rendering/view.dart';
 
 int _hammingWeight(int value) {
   if (value == 0)
@@ -42,7 +43,7 @@ class SkyBinding {
       _renderView = new RenderView(child: root);
       _renderView.attach();
       _renderView.rootConstraints = _createConstraints();
-      _renderView.scheduleInitialLayout();
+      _renderView.scheduleInitialFrame();
     } else {
       _renderView = renderViewOverride;
     }
@@ -71,9 +72,8 @@ class SkyBinding {
   }
   void beginFrame(double timeStamp) {
     RenderObject.flushLayout();
-    _renderView.updateCompositing();
+    _renderView.updateCompositingBits();
     RenderObject.flushPaint();
-    _renderView.paintFrame();
     _renderView.compositeFrame();
   }
 

@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'package:sky/painting/box_painter.dart';
-import 'package:sky/theme/colors.dart';
+import 'package:sky/theme/colors.dart' as colors;
 import 'package:sky/widgets.dart';
 
 class GreenCard extends Component {
@@ -64,6 +63,13 @@ class ExampleApp extends App {
     );
   }
 
+  Rect _targetRect;
+  void _handleOverlaySizeChanged(Size size) {
+    setState(() {
+      _targetRect = Point.origin & size;
+    });
+  }
+
   Widget build() {
     List<Widget> cards = new List<Widget>();
     for (int i = 0; i < _data.length; ++i) {
@@ -75,8 +81,8 @@ class ExampleApp extends App {
       child: new Theme(
         data: new ThemeData(
           brightness: ThemeBrightness.light,
-          primarySwatch: Blue,
-          accentColor: RedAccent[200]
+          primarySwatch: colors.Blue,
+          accentColor: colors.RedAccent[200]
         ),
         child: new Scaffold(
           toolbar: new ToolBar(
@@ -89,10 +95,14 @@ class ExampleApp extends App {
               }
             )
           ),
-          body: new MimicOverlay(
-            overlay: _overlay,
-            duration: const Duration(milliseconds: 500),
-            children: [ new ScrollableBlock(cards) ]
+          body: new SizeObserver(
+            callback: _handleOverlaySizeChanged,
+            child: new MimicOverlay(
+              overlay: _overlay,
+              duration: const Duration(milliseconds: 5000),
+              targetRect: _targetRect,
+              children: [ new Block(cards) ]
+            )
           )
         )
       )

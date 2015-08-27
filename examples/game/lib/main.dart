@@ -12,11 +12,11 @@ import 'package:sky/widgets/basic.dart';
 import 'package:sky/widgets/button_base.dart';
 import 'package:sky/widgets/navigator.dart';
 import 'package:sky/widgets/framework.dart';
-import 'package:sky/widgets/task_description.dart';
+import 'package:sky/widgets/title.dart';
 import 'package:sky/widgets/theme.dart';
+import 'package:skysprites/skysprites.dart';
 
 import 'game_demo.dart';
-import 'sprites.dart';
 
 AssetBundle _initBundle() {
   if (rootBundle != null)
@@ -77,7 +77,7 @@ main() async {
 class GameDemoApp extends App {
 
   NavigationState _navigationState;
-  GameDemoWorld _game;
+  NodeWithSize _game;
   int _lastScore = 0;
 
   void initState() {
@@ -104,48 +104,47 @@ class GameDemoApp extends App {
 
     return new Theme(
       data: theme,
-      child: new TaskDescription(
-        label: 'Asteroids',
+      child: new Title(
+        title: 'Asteroids',
         child: new Navigator(_navigationState)
       )
     );
   }
 
   Widget _buildGameScene(navigator, route) {
-    return new SpriteWidget(_game);
+    return new SpriteWidget(_game, SpriteBoxTransformMode.fixedWidth);
   }
 
   Widget _buildMainScene(navigator, route) {
     return new Stack([
-      new SpriteWidget(new MainScreenBackground()),
-      new Flex([
-        new TextureButton(
-          onPressed: () {
-            _game = new GameDemoWorld(
-              _app,
-              navigator,
-              _imageMap,
-              _spriteSheet,
-              _spriteSheetUI,
-              _sounds,
-              (lastScore) {
-                setState(() {_lastScore = lastScore;});
-              }
-            );
-            navigator.pushNamed('/game');
-          },
-          texture: _spriteSheetUI['btn_play_up.png'],
-          textureDown: _spriteSheetUI['btn_play_down.png'],
-          width: 128.0,
-          height: 128.0
-        ),
-        new Text(
-          "Last Score: $_lastScore",
-          style: new TextStyle(fontSize:20.0)
-        )
-      ],
-      direction: FlexDirection.vertical,
-      justifyContent: FlexJustifyContent.center)
+      new SpriteWidget(new MainScreenBackground(), SpriteBoxTransformMode.fixedWidth),
+      new Column([
+          new TextureButton(
+            onPressed: () {
+              _game = new GameDemoNode(
+                _imageMap,
+                _spriteSheet,
+                _spriteSheetUI,
+                _sounds,
+                (lastScore) {
+                  setState(() {_lastScore = lastScore;});
+                  navigator.pop();
+                }
+              );
+              navigator.pushNamed('/game');
+            },
+            texture: _spriteSheetUI['btn_play_up.png'],
+            textureDown: _spriteSheetUI['btn_play_down.png'],
+            width: 128.0,
+            height: 128.0
+          ),
+          new Text(
+            "Last Score: $_lastScore",
+            style: new TextStyle(fontSize:20.0)
+          )
+        ],
+        justifyContent: FlexJustifyContent.center
+      )
     ]);
   }
 }
@@ -243,14 +242,15 @@ class _TextureButtonToken {
 }
 
 class MainScreenBackground extends NodeWithSize {
-  MainScreenBackground() : super(new Size(1024.0, 1024.0)) {
-    Sprite sprtBackground = new Sprite.fromImage(_imageMap['assets/starfield.png']);
-    sprtBackground.position = new Point(512.0, 512.0);
-    addChild(sprtBackground);
-
+  MainScreenBackground() : super(new Size(320.0, 320.0)) {
     assert(_spriteSheet.image != null);
 
     StarField starField = new StarField(_spriteSheet, 200, true);
     addChild(starField);
+  }
+
+  void paint(PaintingCanvas canvas) {
+    canvas.drawRect(new Rect.fromLTWH(0.0, 0.0, 320.0, 320.0), new Paint()..color=new Color(0xff000000));
+    super.paint(canvas);
   }
 }

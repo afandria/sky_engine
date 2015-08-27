@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'package:sky/widgets/basic.dart';
-import 'package:sky/widgets/navigator.dart';
-import 'package:sky/widgets/raised_button.dart';
+import 'package:sky/widgets.dart';
 
 List<Route> routes = [
   new Route(
@@ -12,7 +10,7 @@ List<Route> routes = [
     builder: (navigator, route) => new Container(
       padding: const EdgeDims.all(30.0),
       decoration: new BoxDecoration(backgroundColor: const Color(0xFFCCCCCC)),
-      child: new Flex([
+      child: new Column([
         new Text("You are at home"),
         new RaisedButton(
           child: new Text('GO SHOPPING'),
@@ -22,7 +20,6 @@ List<Route> routes = [
           child: new Text('START ADVENTURE'),
           onPressed: () => navigator.pushNamed('adventure')
         )],
-        direction: FlexDirection.vertical,
         justifyContent: FlexJustifyContent.center
       )
     )
@@ -32,7 +29,7 @@ List<Route> routes = [
     builder: (navigator, route) => new Container(
       padding: const EdgeDims.all(20.0),
       decoration: new BoxDecoration(backgroundColor: const Color(0xFFBF5FFF)),
-      child: new Flex([
+      child: new Column([
         new Text("Village Shop"),
         new RaisedButton(
           child: new Text('RETURN HOME'),
@@ -42,7 +39,6 @@ List<Route> routes = [
           child: new Text('GO TO DUNGEON'),
           onPressed: () => navigator.push(routes[2])
         )],
-        direction: FlexDirection.vertical,
         justifyContent: FlexJustifyContent.center
       )
     )
@@ -52,13 +48,12 @@ List<Route> routes = [
     builder: (navigator, route) => new Container(
       padding: const EdgeDims.all(20.0),
       decoration: new BoxDecoration(backgroundColor: const Color(0xFFDC143C)),
-      child: new Flex([
+      child: new Column([
         new Text("Monster's Lair"),
         new RaisedButton(
           child: new Text('RUN!!!'),
           onPressed: () => navigator.pop()
         )],
-        direction: FlexDirection.vertical,
         justifyContent: FlexJustifyContent.center
       )
     )
@@ -79,7 +74,7 @@ class NavigationExampleApp extends App {
   }
 
   Widget build() {
-    return new Flex([new Navigator(_navState)]);
+    return new Row([new Navigator(_navState)]);
   }
 }
 

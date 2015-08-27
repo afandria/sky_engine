@@ -4,12 +4,7 @@
 
 import 'dart:sky' as sky;
 
-import 'package:sky/painting/text_style.dart';
-import 'package:sky/rendering/box.dart';
-import 'package:sky/rendering/flex.dart';
-import 'package:sky/rendering/object.dart';
-import 'package:sky/rendering/paragraph.dart';
-import 'package:sky/rendering/sky_binding.dart';
+import 'package:sky/rendering.dart';
 
 RenderBox getBox(double lh) {
   RenderParagraph paragraph = new RenderParagraph(

@@ -5,20 +5,27 @@
 part of fitness;
 
 typedef void SettingsUpdater({
-  BackupMode backup
+  BackupMode backup,
+  double goalWeight
 });
 
-class SettingsFragment extends Component {
+class SettingsFragment extends StatefulComponent {
 
-  SettingsFragment(this.navigator, this.backup, this.updater);
+  SettingsFragment({ this.navigator, this.userData, this.updater });
 
-  final Navigator navigator;
-  final BackupMode backup;
-  final SettingsUpdater updater;
+  Navigator navigator;
+  UserData userData;
+  SettingsUpdater updater;
+
+  void syncConstructorArguments(SettingsFragment source) {
+    navigator = source.navigator;
+    userData = source.userData;
+    updater = source.updater;
+  }
 
   void _handleBackupChanged(bool value) {
-    if (updater != null)
-      updater(backup: value ? BackupMode.enabled : BackupMode.disabled);
+    assert(updater != null);
+    updater(backup: value ? BackupMode.enabled : BackupMode.disabled);
   }
 
   Widget buildToolBar() {
@@ -30,20 +37,87 @@ class SettingsFragment extends Component {
     );
   }
 
+  String get goalWeightText {
+    if (userData.goalWeight == null || userData.goalWeight == 0.0)
+      return "None";
+    else
+      return "${userData.goalWeight}";
+  }
+
+  static final GlobalKey weightGoalKey = new GlobalKey();
+
+  double _goalWeight;
+
+  void _handleGoalWeightChanged(String goalWeight) {
+    // TODO(jackson): Looking for null characters to detect enter key is a hack
+    if (goalWeight.endsWith("\u{0}")) {
+      navigator.pop(double.parse(goalWeight.replaceAll("\u{0}", "")));
+    } else {
+      setState(() {
+        try {
+          _goalWeight = double.parse(goalWeight);
+        } on FormatException {
+          _goalWeight = 0.0;
+        }
+      });
+    }
+  }
+
+  EventDisposition _handleGoalWeightPressed() {
+    showDialog(navigator, (navigator) {
+      return new Dialog(
+        title: new Text("Goal Weight"),
+        content: new Input(
+          key: weightGoalKey,
+          placeholder: 'Goal weight in lbs',
+          keyboardType: KeyboardType_NUMBER,
+          onChanged: _handleGoalWeightChanged
+        ),
+        onDismiss: () {
+          navigator.pop();
+        },
+        actions: [
+          new FlatButton(
+            child: new Text('CANCEL'),
+            onPressed: () {
+              navigator.pop();
+            }
+          ),
+          new FlatButton(
+            child: new Text('SAVE'),
+            onPressed: () {
+              navigator.pop(_goalWeight);
+            }
+          ),
+        ]
+      );
+    }).then((double goalWeight) => updater(goalWeight: goalWeight));
+    return EventDisposition.processed;
+  }
+
   Widget buildSettingsPane() {
     return new Material(
       type: MaterialType.canvas,
       child: new ScrollableViewport(
         child: new Container(
           padding: const EdgeDims.symmetric(vertical: 20.0),
-          child: new Block([
+          child: new BlockBody([
             new DrawerItem(
-              onPressed: () { _handleBackupChanged(!(backup == BackupMode.enabled)); },
-              children: [
+              onPressed: () { _handleBackupChanged(!(userData.backupMode == BackupMode.enabled)); },
+              child: new Row([
                 new Flexible(child: new Text('Back up data to the cloud')),
-                new Switch(value: backup == BackupMode.enabled, onChanged: _handleBackupChanged)
-              ]
-            )
+                new Switch(value: userData.backupMode == BackupMode.enabled, onChanged: _handleBackupChanged),
+              ])
+            ),
+            new DrawerItem(
+              onPressed: () => _handleGoalWeightPressed(),
+              child: new Column([
+                  new Text('Goal Weight'),
+                  new Text(goalWeightText, style: Theme.of(this).text.caption),
+                ],
+                alignItems: FlexAlignItems.start
+              )
+            ),
           ])
         )
       )

@@ -2,24 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'package:sky/animation/animated_value.dart';
-import 'package:sky/animation/animation_performance.dart';
-import 'package:sky/animation/curves.dart';
 import 'package:sky/base/lerp.dart';
-import 'package:sky/painting/box_painter.dart';
-import 'package:sky/painting/text_style.dart';
-import 'package:sky/rendering/box.dart';
-import 'package:sky/theme/colors.dart';
-import 'package:sky/widgets/basic.dart';
-import 'package:sky/widgets/block_viewport.dart';
-import 'package:sky/widgets/card.dart';
-import 'package:sky/widgets/icon.dart';
-import 'package:sky/widgets/scrollable.dart';
-import 'package:sky/widgets/scaffold.dart';
-import 'package:sky/widgets/theme.dart';
-import 'package:sky/widgets/tool_bar.dart';
-import 'package:sky/widgets/framework.dart';
-import 'package:sky/widgets/task_description.dart';
+import 'package:sky/theme/colors.dart' as colors;
+import 'package:sky/widgets.dart';
 
 class CardModel {
   CardModel(this.value, this.height, this.color);
@@ -33,12 +18,14 @@ class CardModel {
 class EnsureVisibleApp extends App {
 
   static const TextStyle cardLabelStyle =
-    const TextStyle(color: white, fontSize: 18.0, fontWeight: bold);
+    const TextStyle(color: colors.white, fontSize: 18.0, fontWeight: bold);
+
+  static const TextStyle selectedCardLabelStyle =
+    const TextStyle(color: colors.white, fontSize: 24.0, fontWeight: bold);
 
   List<CardModel> cardModels;
-  BlockViewportLayoutState layoutState = new BlockViewportLayoutState();
-  ScrollListener scrollListener;
-  ValueAnimation<double> scrollAnimation;
+  MixedViewportLayoutState layoutState = new MixedViewportLayoutState();
+  CardModel selectedCardModel;
 
   void initState() {
     List<double> cardHeights = <double>[
@@ -47,19 +34,19 @@ class EnsureVisibleApp extends App {
       48.0, 63.0, 82.0, 146.0, 60.0, 55.0, 84.0, 96.0, 50.0
     ];
     cardModels = new List.generate(cardHeights.length, (i) {
-      Color color = lerpColor(Red[300], Blue[900], i / cardHeights.length);
+      Color color = lerpColor(colors.Red[300], colors.Blue[900], i / cardHeights.length);
       return new CardModel(i, cardHeights[i], color);
     });
-
-    scrollAnimation = new ValueAnimation<double>()
-      ..duration = const Duration(milliseconds: 200)
-      ..variable = new AnimatedValue<double>(0.0, curve: ease);
 
     super.initState();
   }
 
-  EventDisposition handleTap(Widget target) {
-    ensureWidgetIsVisible(target, animation: scrollAnimation);
+  EventDisposition handleTap(Widget card, CardModel cardModel) {
+    ensureWidgetIsVisible(card, duration: const Duration(milliseconds: 200))
+    .then((_) {
+      setState(() { selectedCardModel = cardModel; });
+    });
+
     return EventDisposition.processed;
   }
 
@@ -67,17 +54,18 @@ class EnsureVisibleApp extends App {
     if (index >= cardModels.length)
       return null;
     CardModel cardModel = cardModels[index];
+    TextStyle style = (cardModel == selectedCardModel) ? selectedCardLabelStyle : cardLabelStyle;
     Widget card = new Card(
       color: cardModel.color,
       child: new Container(
         height: cardModel.height,
         padding: const EdgeDims.all(8.0),
-        child: new Center(child: new Text(cardModel.label, style: cardLabelStyle))
+        child: new Center(child: new Text(cardModel.label, style: style))
       )
     );
     return new Listener(
       key: cardModel.key,
-      onGestureTap: (_) { return handleTap(card); },
+      onGestureTap: (_) { return handleTap(card, cardModel); },
       child: card
     );
   }
@@ -86,7 +74,7 @@ class EnsureVisibleApp extends App {
     Widget cardCollection = new Container(
       padding: const EdgeDims.symmetric(vertical: 12.0, horizontal: 8.0),
       decoration: new BoxDecoration(backgroundColor: Theme.of(this).primarySwatch[50]),
-      child: new VariableHeightScrollable(
+      child: new ScrollableMixedWidgetList(
         builder: builder,
         token: cardModels.length,
         layoutState: layoutState
@@ -98,11 +86,11 @@ class EnsureVisibleApp extends App {
       child: new Theme(
         data: new ThemeData(
           brightness: ThemeBrightness.light,
-          primarySwatch: Blue,
-          accentColor: RedAccent[200]
+          primarySwatch: colors.Blue,
+          accentColor: colors.RedAccent[200]
         ),
-        child: new TaskDescription(
-          label: 'Cards',
+        child: new Title(
+          title: 'Cards',
           child: new Scaffold(
             toolbar: new ToolBar(center: new Text('Tap a Card')),
             body: cardCollection

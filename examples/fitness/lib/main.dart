@@ -12,6 +12,7 @@ import 'package:sky/widgets.dart';
 import 'user_data.dart';
 import 'date_utils.dart';
 import 'dart:async';
+import 'dart:math' as math;
 
 part 'feed.dart';
 part 'fitness_item.dart';
@@ -20,47 +21,81 @@ part 'meal.dart';
 part 'measurement.dart';
 part 'settings.dart';
 
-class UserData {
+abstract class UserData {
+  BackupMode get backupMode;
+  double get goalWeight;
+  List<FitnessItem> get items;
+}
+
+class UserDataImpl extends UserData {
+  UserDataImpl();
+
   List<FitnessItem> _items = [];
 
-  List<FitnessItem> get items => _items;
-  void set items(List<FitnessItem> newItems) {
-    _items = [];
-    _items.addAll(newItems);
-    sort();
+  BackupMode _backupMode;
+  BackupMode get backupMode => _backupMode;
+  void set backupMode(BackupMode value) {
+    _backupMode = value;
   }
+
+  double _goalWeight;
+  double get goalWeight => _goalWeight;
+  void set goalWeight(double value) {
+    _goalWeight = value;
+  }
+
+  List<FitnessItem> get items => _items;
 
   void sort() {
-    _items.sort((a, b) => -a.when.compareTo(b.when));
+    _items.sort((a, b) => a.when.compareTo(b.when));
   }
 
-  void addAndSave(FitnessItem item) {
+  void add(FitnessItem item) {
     _items.add(item);
     sort();
-    save();
   }
 
-  void removeAndSave(FitnessItem item) {
+  void remove(FitnessItem item) {
     _items.remove(item);
-    save();
   }
 
-  Future save() => saveFitnessData(_items);
+  Future save() => saveFitnessData(this);
+
+  UserDataImpl.fromJson(Map json) {
+    json['items'].forEach((item) {
+      _items.add(new Measurement.fromJson(item));
+    });
+    try {
+      _backupMode = BackupMode.values.firstWhere((BackupMode mode) {
+        return mode.toString() == json['backupMode'];
+      });
+    } catch(e) {
+      print("Failed to load backup mode: ${e}");
+    }
+    _goalWeight = json['goalWeight'];
+  }
+
+  Map toJson() {
+    Map json = new Map();
+    json['items'] = _items.map((item) => item.toJson()).toList();
+    json['backupMode'] = _backupMode.toString();
+    json['goalWeight'] = _goalWeight;
+    return json;
+  }
 }
 
 class FitnessApp extends App {
   NavigationState _navigationState;
-  final UserData _userData = new UserData();
+  UserDataImpl _userData;
 
   void didMount() {
     super.didMount();
-    loadFitnessData().then((List<Measurement> list) {
-      setState(() => _userData.items = list);
-    }).catchError((e) => print("Failed to load data: $e"));
-  }
-
-  void save() {
-    _userData.save().catchError((e) => print("Failed to load data: $e"));
+    loadFitnessData().then((UserData data) {
+      setState(() => _userData = data);
+    }).catchError((e) {
+      print("Failed to load data: $e");
+      setState(() => _userData = new UserDataImpl());
+    });
   }
 
   void initState() {
@@ -69,7 +104,7 @@ class FitnessApp extends App {
         name: '/',
         builder: (navigator, route) => new FeedFragment(
           navigator: navigator,
-          userData: _userData.items,
+          userData: _userData,
           onItemCreated: _handleItemCreated,
           onItemDeleted: _handleItemDeleted
         )
@@ -90,7 +125,11 @@ class FitnessApp extends App {
       ),
       new Route(
         name: '/settings',
-        builder: (navigator, route) => new SettingsFragment(navigator, backupSetting, settingsUpdater)
+        builder: (navigator, route) => new SettingsFragment(
+          navigator: navigator,
+          userData: _userData,
+          updater: settingsUpdater
+        )
       ),
     ]);
     super.initState();
@@ -105,19 +144,26 @@ class FitnessApp extends App {
   }
 
   void _handleItemCreated(FitnessItem item) {
-    setState(() => _userData.addAndSave(item));
+    setState(() {
+      _userData.add(item);
+      _userData.save();
+    });
   }
 
   void _handleItemDeleted(FitnessItem item) {
-    setState(() => _userData.removeAndSave(item));
+    setState(() {
+      _userData.remove(item);
+      _userData.save();
+    });
   }
 
-  BackupMode backupSetting = BackupMode.disabled;
-
-  void settingsUpdater({ BackupMode backup }) {
+  void settingsUpdater({ BackupMode backup, double goalWeight }) {
     setState(() {
       if (backup != null)
-        backupSetting = backup;
+        _userData.backupMode = backup;
+      if (goalWeight != null)
+        _userData.goalWeight = goalWeight;
+      _userData.save();
     });
   }
 
@@ -128,8 +174,8 @@ class FitnessApp extends App {
         primarySwatch: colors.Indigo,
         accentColor: colors.PinkAccent[200]
       ),
-      child: new TaskDescription(
-        label: 'Fitness',
+      child: new Title(
+        title: 'Fitness',
         child: new Navigator(_navigationState)
       )
     );

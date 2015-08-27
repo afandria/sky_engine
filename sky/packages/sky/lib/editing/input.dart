@@ -8,6 +8,7 @@ import 'package:sky/mojo/keyboard.dart';
 import 'package:sky/painting/text_style.dart';
 import 'package:sky/widgets/basic.dart';
 import 'package:sky/widgets/focus.dart';
+import 'package:sky/widgets/framework.dart';
 import 'package:sky/widgets/theme.dart';
 
 export 'package:sky/mojo/keyboard.dart' show KeyboardType_TEXT, KeyboardType_NUMBER, KeyboardType_PHONE, KeyboardType_DATETIME;
@@ -43,7 +44,7 @@ class Input extends StatefulComponent {
     super.initState();
   }
 
-  void syncFields(Input source) {
+  void syncConstructorArguments(Input source) {
     placeholder = source.placeholder;
     onChanged = source.onChanged;
     keyboardType = source.keyboardType;
@@ -74,7 +75,7 @@ class Input extends StatefulComponent {
 
     if (placeholder != null && _value.isEmpty) {
       Widget child = new Opacity(
-        key: new Key('placeholder'),
+        key: const StringKey('placeholder'),
         child: new Text(placeholder, style: textStyle),
         opacity: themeData.hintOpacity
       );

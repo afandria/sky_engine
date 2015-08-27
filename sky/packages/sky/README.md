@@ -29,7 +29,7 @@ Sky assumes the entry point for your application is a `main` function in
 `lib/main.dart`:
 
 ```dart
-import 'package:sky/widgets/basic.dart';
+import 'package:sky/widgets.dart';
 
 class HelloWorldApp extends App {
   Widget build() {
@@ -75,14 +75,34 @@ expects to be run from the root directory of your application's package (i.e.,
 the same directory that contains the `pubspec.yaml` file). To run your app,
 follow these instructions:
 
- - `./packages/sky/sky_tool start` to start the dev server and upload your
-   app to the device.
-   (NOTE: add a `--install` flag to install `SkyShell.apk` if it is not already
-   installed on the device.)
+ - The first time: `./packages/sky/sky_tool start --install --checked && adb logcat -s sky chromium`
+ - Subsequent times: `./packages/sky/sky_tool start --checked && adb logcat -s sky chromium`
 
- - Use `adb logcat` to view any errors or Dart `print()` output from the app.
-   `adb logcat -s sky` can be used to filter only adb messages from
-   `SkyShell.apk`.
+The `sky_tool start` command starts the dev server and uploads your app to the device.
+The `--install` flag installs `SkyShell.apk` if it is not already installed on the device.
+The `--checked` flag triggers checked mode, in which types are checked, asserts are run, and
+various [debugging features](lib/base/debug.dart) are enabled.
+The `adb logcat` command logs errors and Dart `print()` output from the app. The `-s sky chromium`
+argument limits the output to just output from Sky Dart code and the Sky Engine C++ code (which
+for historical reasons currently uses the tag `chromium`.)
+
+To avoid confusion from old log messages, you may wish to run `adb logcat -c` before calling
+`sky_tool start`, to clear the log between runs.
+
+Rapid Iteration
+---------------
+
+As an alternative to running `./packages/sky/sky_tool start` every time you make a change,
+you might prefer to have the SkyShell reload your app automatically for you as you edit.  To
+do this, run the following command:
+
+ - `./packages/sky/sky_tool listen`
+
+This is a long-running command -- just press `ctrl-c` when you want to stop listening for
+changes to the file system and automatically reloading your app.
+
+Currently `sky_tool listen` only works for Android, but iOS device and iOS simulator support
+are coming soon.
 
 Debugging
 ---------

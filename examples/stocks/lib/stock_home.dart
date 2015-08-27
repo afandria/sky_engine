@@ -17,7 +17,7 @@ class StockHome extends StatefulComponent {
   StockMode stockMode;
   ModeUpdater modeUpdater;
 
-  void syncFields(StockHome source) {
+  void syncConstructorArguments(StockHome source) {
     navigator = source.navigator;
     stocks = source.stocks;
     stockMode = source.stockMode;
@@ -122,37 +122,41 @@ class StockHome extends StatefulComponent {
       onDismissed: _handleDrawerDismissed,
       navigator: navigator,
       children: [
-        new DrawerHeader(children: [new Text('Stocks')]),
+        new DrawerHeader(child: new Text('Stocks')),
         new DrawerItem(
           icon: 'action/assessment',
           selected: true,
-          children: [new Text('Stock List')]),
+          child: new Text('Stock List')
+        ),
         new DrawerItem(
           icon: 'action/account_balance',
-          children: [new Text('Account Balance')]),
+          child: new Text('Account Balance')
+        ),
         new DrawerDivider(),
         new DrawerItem(
           icon: 'action/thumb_up',
           onPressed: () => _handleStockModeChange(StockMode.optimistic),
-          children: [
+          child: new Row([
             new Flexible(child: new Text('Optimistic')),
             new Radio(value: StockMode.optimistic, groupValue: stockMode, onChanged: _handleStockModeChange)
-          ]),
+          ])
+        ),
         new DrawerItem(
           icon: 'action/thumb_down',
           onPressed: () => _handleStockModeChange(StockMode.pessimistic),
-          children: [
+          child: new Row([
             new Flexible(child: new Text('Pessimistic')),
             new Radio(value: StockMode.pessimistic, groupValue: stockMode, onChanged: _handleStockModeChange)
-          ]),
+          ])
+        ),
         new DrawerDivider(),
         new DrawerItem(
           icon: 'action/settings',
           onPressed: _handleShowSettings,
-          children: [new Text('Settings')]),
+          child: new Text('Settings')),
         new DrawerItem(
           icon: 'action/help',
-          children: [new Text('Help & Feedback')])
+          child: new Text('Help & Feedback'))
      ]
     );
   }

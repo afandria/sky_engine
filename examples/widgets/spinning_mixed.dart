@@ -5,13 +5,8 @@
 import 'dart:sky' as sky;
 
 import 'package:sky/base/scheduler.dart' as scheduler;
-import 'package:sky/rendering/box.dart';
-import 'package:sky/rendering/flex.dart';
-import 'package:sky/rendering/sky_binding.dart';
-import 'package:sky/widgets/basic.dart';
-import 'package:sky/widgets/raised_button.dart';
-import 'package:sky/widgets/framework.dart';
-import 'package:vector_math/vector_math.dart';
+import 'package:sky/rendering.dart';
+import 'package:sky/widgets.dart';
 
 import '../rendering/solid_color_box.dart';
 
@@ -36,24 +31,26 @@ class Rectangle extends Component {
 }
 
 Widget builder() {
-  return new Flex([
-      new Rectangle(const Color(0xFF00FFFF)),
-      new Container(
-        padding: new EdgeDims.all(10.0),
-        margin: new EdgeDims.all(10.0),
-        decoration: new BoxDecoration(backgroundColor: const Color(0xFFCCCCCC)),
-        child: new RaisedButton(
-          child: new Flex([
-            new NetworkImage(src: "https://www.dartlang.org/logos/dart-logo.png"),
-            new Text('PRESS ME'),
-          ]),
-          onPressed: () => print("Hello World")
-        )
-      ),
-      new Rectangle(const Color(0xFFFFFF00)),
-    ],
-    direction: FlexDirection.vertical,
-    justifyContent: FlexJustifyContent.spaceBetween
+  return new Container(
+    height: 300.0,
+    child: new Column([
+        new Rectangle(const Color(0xFF00FFFF)),
+        new Container(
+          padding: new EdgeDims.all(10.0),
+          margin: new EdgeDims.all(10.0),
+          decoration: new BoxDecoration(backgroundColor: const Color(0xFFCCCCCC)),
+          child: new RaisedButton(
+            child: new Row([
+              new NetworkImage(src: "https://www.dartlang.org/logos/dart-logo.png"),
+              new Text('PRESS ME'),
+            ]),
+            onPressed: () => print("Hello World")
+          )
+        ),
+        new Rectangle(const Color(0xFFFFFF00)),
+      ],
+      justifyContent: FlexJustifyContent.spaceBetween
+    )
   );
 }
 
@@ -80,11 +77,10 @@ void main() {
   // want a renderViewOverride.
   WidgetSkyBinding.initWidgetSkyBinding();
 
-  RenderFlex flexRoot = new RenderFlex(direction: FlexDirection.vertical);
-
   RenderProxyBox proxy = new RenderProxyBox();
   new RenderBoxToWidgetAdapter(proxy, builder); // adds itself to proxy
 
+  RenderFlex flexRoot = new RenderFlex(direction: FlexDirection.vertical);
   addFlexChildSolidColor(flexRoot, const sky.Color(0xFFFF00FF), flex: 1);
   flexRoot.add(proxy);
   addFlexChildSolidColor(flexRoot, const sky.Color(0xFF0000FF), flex: 1);
