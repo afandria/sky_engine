@@ -8,24 +8,24 @@ import 'dart:sky' as sky;
 
 import 'package:newton/newton.dart';
 import 'package:sky/animation/animated_simulation.dart';
-import 'package:sky/animation/animation_performance.dart';
 import 'package:sky/animation/animated_value.dart';
+import 'package:sky/animation/animation_performance.dart';
 import 'package:sky/animation/curves.dart';
 import 'package:sky/animation/scroll_behavior.dart';
+import 'package:sky/gestures/constants.dart';
 import 'package:sky/rendering/box.dart';
 import 'package:sky/rendering/viewport.dart';
-import 'package:sky/theme/view_configuration.dart' as config;
 import 'package:sky/widgets/basic.dart';
 import 'package:sky/widgets/framework.dart';
+import 'package:sky/widgets/gesture_detector.dart';
 import 'package:sky/widgets/mixed_viewport.dart';
-import 'package:sky/widgets/scrollable.dart';
 
 export 'package:sky/widgets/mixed_viewport.dart' show MixedViewportLayoutState;
 
 // The GestureEvent velocity properties are pixels/second, config min,max limits are pixels/ms
 const double _kMillisecondsPerSecond = 1000.0;
-const double _kMinFlingVelocity = -config.kMaxFlingVelocity * _kMillisecondsPerSecond;
-const double _kMaxFlingVelocity = config.kMaxFlingVelocity * _kMillisecondsPerSecond;
+const double _kMinFlingVelocity = -kMaxFlingVelocity * _kMillisecondsPerSecond;
+const double _kMaxFlingVelocity = kMaxFlingVelocity * _kMillisecondsPerSecond;
 
 typedef void ScrollListener();
 
@@ -83,15 +83,18 @@ abstract class Scrollable extends StatefulComponent {
   Widget buildContent();
 
   Widget build() {
-    return new Listener(
-      child: buildContent(),
-      onPointerDown: _handlePointerDown,
-      onPointerUp: _handlePointerUpOrCancel,
-      onPointerCancel: _handlePointerUpOrCancel,
-      onGestureFlingStart: _handleFlingStart,
-      onGestureFlingCancel: _handleFlingCancel,
-      onGestureScrollUpdate: _handleScrollUpdate,
-      onWheel: _handleWheel
+    return new GestureDetector(
+      onVerticalScrollUpdate: scrollDirection == ScrollDirection.vertical ? scrollBy : null,
+      onVerticalScrollEnd: scrollDirection == ScrollDirection.vertical ? _maybeSettleScrollOffset : null,
+      onHorizontalScrollUpdate: scrollDirection == ScrollDirection.horizontal ? scrollBy : null,
+      onHorizontalScrollEnd: scrollDirection == ScrollDirection.horizontal ? _maybeSettleScrollOffset : null,
+      child: new Listener(
+        child: buildContent(),
+        onPointerDown: _handlePointerDown,
+        onGestureFlingStart: _handleFlingStart,
+        onGestureFlingCancel: _handleFlingCancel,
+        onWheel: _handleWheel
+      )
     );
   }
 
@@ -171,11 +174,6 @@ abstract class Scrollable extends StatefulComponent {
     return EventDisposition.processed;
   }
 
-  EventDisposition _handleScrollUpdate(sky.GestureEvent event) {
-    scrollBy(scrollDirection == ScrollDirection.horizontal ? event.dx : -event.dy);
-    return EventDisposition.processed;
-  }
-
   EventDisposition _handleFlingStart(sky.GestureEvent event) {
     _startToEndAnimation(velocity: _eventVelocity(event));
     return EventDisposition.processed;
@@ -185,11 +183,6 @@ abstract class Scrollable extends StatefulComponent {
     if (!_toEndAnimation.isAnimating &&
         (_toOffsetAnimation == null || !_toOffsetAnimation.isAnimating))
       settleScrollOffset();
-  }
-
-  EventDisposition _handlePointerUpOrCancel(_) {
-    _maybeSettleScrollOffset();
-    return EventDisposition.processed;
   }
 
   EventDisposition _handleFlingCancel(sky.GestureEvent event) {
@@ -542,6 +535,8 @@ class ScrollableList<T> extends ScrollableWidgetList {
   }
 }
 
+typedef void PageChangedCallback(int newPage);
+
 class PageableList<T> extends ScrollableList<T> {
   PageableList({
     Key key,
@@ -551,6 +546,7 @@ class PageableList<T> extends ScrollableList<T> {
     ItemBuilder<T> itemBuilder,
     bool itemsWrap: false,
     double itemExtent,
+    PageChangedCallback this.pageChanged,
     EdgeDims padding,
     this.duration: const Duration(milliseconds: 200),
     this.curve: ease
@@ -567,10 +563,12 @@ class PageableList<T> extends ScrollableList<T> {
 
   Duration duration;
   Curve curve;
+  PageChangedCallback pageChanged;
 
   void syncConstructorArguments(PageableList<T> source) {
     duration = source.duration;
     curve = source.curve;
+    pageChanged = source.pageChanged;
     super.syncConstructorArguments(source);
   }
 
@@ -592,12 +590,19 @@ class PageableList<T> extends ScrollableList<T> {
     double newScrollOffset = _snapScrollOffset(scrollOffset + velocity.sign * itemExtent)
       .clamp(_snapScrollOffset(scrollOffset - itemExtent / 2.0),
              _snapScrollOffset(scrollOffset + itemExtent / 2.0));
-    scrollTo(newScrollOffset, duration: duration, curve: curve);
+    scrollTo(newScrollOffset, duration: duration, curve: curve).then(_notifyPageChanged);
     return EventDisposition.processed;
   }
 
+  int get currentPage => (scrollOffset / itemExtent).floor();
+
+  void _notifyPageChanged(_) {
+    if (pageChanged != null)
+      pageChanged(currentPage);
+  }
+
   void settleScrollOffset() {
-    scrollTo(_snapScrollOffset(scrollOffset), duration: duration, curve: curve);
+    scrollTo(_snapScrollOffset(scrollOffset), duration: duration, curve: curve).then(_notifyPageChanged);
   }
 }
 

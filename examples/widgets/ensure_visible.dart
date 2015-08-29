@@ -12,7 +12,7 @@ class CardModel {
   double height;
   Color color;
   String get label => "Card $value";
-  Key get key => new Key.fromObjectIdentity(this);
+  Key get key => new ObjectKey(this);
 }
 
 class EnsureVisibleApp extends App {
@@ -41,13 +41,11 @@ class EnsureVisibleApp extends App {
     super.initState();
   }
 
-  EventDisposition handleTap(Widget card, CardModel cardModel) {
+  void handleTap(Widget card, CardModel cardModel) {
     ensureWidgetIsVisible(card, duration: const Duration(milliseconds: 200))
     .then((_) {
       setState(() { selectedCardModel = cardModel; });
     });
-
-    return EventDisposition.processed;
   }
 
   Widget builder(int index) {
@@ -63,9 +61,9 @@ class EnsureVisibleApp extends App {
         child: new Center(child: new Text(cardModel.label, style: style))
       )
     );
-    return new Listener(
+    return new GestureDetector(
       key: cardModel.key,
-      onGestureTap: (_) { return handleTap(card, cardModel); },
+      onTap: () => handleTap(card, cardModel),
       child: card
     );
   }

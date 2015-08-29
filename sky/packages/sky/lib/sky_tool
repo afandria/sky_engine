@@ -75,6 +75,7 @@ def _start_http_server(port, root):
     server_command = [
         PUB_PATH, 'run', 'sky_tools:sky_server', str(port),
     ]
+    logging.info(' '.join(server_command))
     return subprocess.Popen(server_command, cwd=root).pid
 
 
@@ -156,30 +157,20 @@ class StartSky(object):
             default='.')
         start_parser.set_defaults(func=self.run)
 
-    def _is_package_installed(self, package_name):
-        pm_path_cmd = [ADB_PATH, 'shell', 'pm', 'path', package_name]
-        return subprocess.check_output(pm_path_cmd).strip() != ''
-
-    def _is_valid_script_path(self):
-        script_path = os.path.dirname(os.path.abspath(__file__))
-        script_dirs = script_path.split('/')
-        return len(script_dirs) > 1 and script_dirs[-2] == 'packages'
-
-    def _get_device_apk_sha1(self, apk_path):
-        # We might need to install a new APK, so check SHA1
-        return subprocess.check_output([ADB_PATH, 'shell', 'cat', SHA1_PATH])
-
     def run(self, args, pids):
         if not args.poke:
             StopSky().run(args, pids)
 
+        android = AndroidDevice()
+
         project_or_path = os.path.abspath(args.project_or_path)
 
-        if args.local_build:
+        if args.android_build_available and args.use_release:
+            apk_path = os.path.join(os.path.normpath(args.sky_src_path), args.android_release_build_path, 'apks', APK_NAME)
+        elif args.android_build_available:
             apk_path = os.path.join(os.path.normpath(args.sky_src_path), args.android_debug_build_path, 'apks', APK_NAME)
         else:
             apk_path = os.path.join(APK_DIR, APK_NAME)
-        source_sha1 = hashlib.sha1(open(apk_path, 'rb').read()).hexdigest()
 
         if os.path.isdir(project_or_path):
             sky_server_root = project_or_path
@@ -201,46 +192,209 @@ class StartSky(object):
             logging.error('%s is not a valid packages path.' % package_root)
             return 2
 
-        if not self._is_package_installed(ANDROID_PACKAGE):
+        if not android.is_package_installed(ANDROID_PACKAGE):
             logging.info('%s is not on the device. Installing now...' % APK_NAME)
             args.install = True
-        elif self._get_device_apk_sha1(apk_path) != source_sha1:
+        elif android.get_device_apk_sha1(apk_path) != android.get_source_sha1(apk_path):
             logging.info('%s on the device is out of date. Installing now...' % APK_NAME)
             args.install = True
 
         if args.install:
-            if not self._is_valid_script_path():
-                logging.error('"%s" must be located in packages/sky. '
-                              'The directory packages/sky_engine must also '
-                              'exist to locate %s.' % (os.path.basename(__file__), APK_NAME))
-                return 2
-            if not os.path.exists(apk_path):
-                logging.error('"%s" does not exist.' % apk_path)
-                return 2
-
-            cmd = [ADB_PATH, 'install', '-r', apk_path]
-            subprocess.check_call(cmd)
-            # record the SHA1 of the APK we just pushed
-            with tempfile.NamedTemporaryFile() as fp:
-                fp.write(source_sha1)
-                fp.seek(0)
-                subprocess.check_call([ADB_PATH, 'push', fp.name, SHA1_PATH])
+            # Install on connected Android device
+            if android.is_connected() and args.android_build_available:
+                if args.use_release:
+                    apk_path = os.path.join(args.sky_src_path, args.android_release_build_path, 'apks', APK_NAME)
+                else:
+                    apk_path = os.path.join(args.sky_src_path, args.android_debug_build_path, 'apks', APK_NAME)
+                android.install_apk(apk_path)
 
             # Install on connected iOS device
-            if IOSDevice.is_connected() and args.local_build:
-                app_path = os.path.join(args.sky_src_path, args.ios_debug_build_path, IOS_APP_NAME)
+            if IOSDevice.is_connected() and args.ios_build_available:
+                if args.use_release:
+                    app_path = os.path.join(args.sky_src_path, args.ios_release_build_path, IOS_APP_NAME)
+                else:
+                    app_path = os.path.join(args.sky_src_path, args.ios_debug_build_path, IOS_APP_NAME)
                 IOSDevice.install_app(app_path)
 
             # Install on iOS simulator if it's running
-            if IOSSimulator.is_booted() and args.local_build:
-                app_path = os.path.join(args.sky_src_path, args.ios_sim_debug_build_path, IOS_APP_NAME)
+            if IOSSimulator.is_booted() and args.ios_sim_build_available:
+                if args.use_release:
+                    app_path = os.path.join(args.sky_src_path, args.ios_sim_release_build_path, IOS_APP_NAME)
+                else:
+                    app_path = os.path.join(args.sky_src_path, args.ios_sim_debug_build_path, IOS_APP_NAME)
                 IOSSimulator.fork_install_app(app_path)
+
+        # TODO(iansf): fix this so that we don't have to pass sky_server_root, main_dart, pid, and args.
+        android.setup_servers(sky_server_root, main_dart, pids, args)
+
+
+class StopSky(object):
+    def add_subparser(self, subparsers):
+        stop_parser = subparsers.add_parser('stop',
+            help=('kill all running SkyShell.apk processes'))
+        stop_parser.set_defaults(func=self.run)
+
+    def _run(self, args):
+        with open('/dev/null', 'w') as dev_null:
+            logging.info(' '.join(args))
+            subprocess.call(args, stdout=dev_null, stderr=dev_null)
+
+    def run(self, args, pids):
+        self._run(['fuser', '-k', '%s/tcp' % SKY_SERVER_PORT])
+
+        if 'remote_sky_server_port' in pids:
+            port_string = 'tcp:%s' % pids['remote_sky_server_port']
+            self._run([AndroidDevice().adb_path, 'reverse', '--remove', port_string])
+
+        self._run([AndroidDevice().adb_path, 'shell', 'am', 'force-stop', ANDROID_PACKAGE])
+
+        pids.clear()
+
+class AndroidDevice(object):
+    # _state used in this manner gives a simple way to treat AndroidDevice
+    # as a singleton while easily allowing subclassing for mocks.  All
+    # AndroidDevices created in a given session will share the same state.
+    _state = {}
+    def __init__(self):
+        self.__dict__ = AndroidDevice._state
+        self._update_paths()
+
+        # Checking for lollipop only needs to be done if we are starting an
+        # app, but it has an important side effect, which is to discard any
+        # progress messages if the adb server is restarted.
+        self._check_for_adb()
+        self._check_for_lollipop_or_later()
+
+    def _update_paths(self):
+        if 'adb_path' in self.__dict__:
+            return
+        if 'ANDROID_HOME' in os.environ:
+            android_home_dir = os.environ['ANDROID_HOME']
+            self.adb_path = os.path.join(android_home_dir, 'sdk', 'platform-tools', 'adb')
+        else:
+            self.adb_path = ADB_PATH
+
+    def _is_valid_adb_version(self, adb_version):
+        # Sample output: 'Android Debug Bridge version 1.0.31'
+        version_fields = re.search('(\d+)\.(\d+)\.(\d+)', adb_version)
+        if version_fields:
+            major_version = int(version_fields.group(1))
+            minor_version = int(version_fields.group(2))
+            patch_version = int(version_fields.group(3))
+            if major_version > 1:
+                return True
+            if major_version == 1 and minor_version > 0:
+                return True
+            if major_version == 1 and minor_version == 0 and patch_version >= 32:
+                return True
+            return False
+        else:
+            logging.warn('Unrecognized adb version string. Skipping version check.')
+            return True
+
+    def _check_for_adb(self):
+        if 'has_valid_adb' in self.__dict__:
+            return
+        try:
+            cmd = [self.adb_path, 'version']
+            logging.info(' '.join(cmd))
+            adb_version = subprocess.check_output(cmd)
+            if self._is_valid_adb_version(adb_version):
+                self.has_valid_adb = True
+                return
+
+            cmd = ['which', ADB_PATH]
+            logging.info(' '.join(cmd))
+            adb_path = subprocess.check_output(cmd).rstrip()
+            logging.error('"%s" is too old. Need 1.0.32 or later. '
+                'Try setting ANDROID_HOME to use Android builds. Android builds are unavailable.' % adb_path)
+            self.has_valid_adb = False
+        except OSError:
+            logging.warning('"adb" (from the Android SDK) not in $PATH, Android builds are unavailable.')
+            self.has_valid_adb = False
+
+    def _check_for_lollipop_or_later(self):
+        if 'has_valid_android' in self.__dict__:
+            return
+        try:
+            # If the server is automatically restarted, then we get irrelevant
+            # output lines like this, which we want to ignore:
+            #   adb server is out of date.  killing..
+            #   * daemon started successfully *
+            cmd = [self.adb_path, 'start-server']
+            logging.info(' '.join(cmd))
+            subprocess.call(cmd)
+
+            cmd = [self.adb_path, 'shell', 'getprop', 'ro.build.version.sdk']
+            logging.info(' '.join(cmd))
+            sdk_version = subprocess.check_output(cmd).rstrip()
+            # Sample output: '22'
+            if not sdk_version.isdigit():
+                logging.error('Unexpected response from getprop: "%s".' % sdk_version)
+                self.has_valid_android = False
+                return
+
+            if int(sdk_version) < 22:
+                logging.error('Version "%s" of the Android SDK is too old. '
+                              'Need Lollipop (22) or later. ' % sdk_version)
+                self.has_valid_android = False
+                return
+        except subprocess.CalledProcessError as e:
+            # adb printed the error, so we print nothing.
+            self.has_valid_android = False
+            return
+        self.has_valid_android = True
+
+    def is_package_installed(self, package_name):
+        if not self.is_connected():
+            return False
+        pm_path_cmd = [self.adb_path, 'shell', 'pm', 'path', package_name]
+        logging.info(' '.join(pm_path_cmd))
+        return subprocess.check_output(pm_path_cmd).strip() != ''
+
+    def get_device_apk_sha1(self, apk_path):
+        # We might need to install a new APK, so check SHA1
+        cmd = [self.adb_path, 'shell', 'cat', SHA1_PATH]
+        logging.info(' '.join(cmd))
+        return subprocess.check_output(cmd)
+
+    def get_source_sha1(self, apk_path):
+        return hashlib.sha1(open(apk_path, 'rb').read()).hexdigest()
+
+    def is_connected(self):
+        return self.has_valid_android
+
+    def install_apk(self, apk_path):
+        if not os.path.exists(apk_path):
+            logging.error('"%s" does not exist.' % apk_path)
+            return
+
+        cmd = [self.adb_path, 'install', '-r', apk_path]
+        logging.info(' '.join(cmd))
+        subprocess.check_call(cmd)
+        # record the SHA1 of the APK we just pushed
+        with tempfile.NamedTemporaryFile() as fp:
+            fp.write(self.get_source_sha1(apk_path))
+            fp.seek(0)
+            cmd = [self.adb_path, 'push', fp.name, SHA1_PATH]
+            logging.info(' '.join(cmd))
+            subprocess.check_call(cmd)
+
+    # TODO(iansf): refactor setup_servers
+    def setup_servers(self, sky_server_root, main_dart, pids, args):
+        if not self.is_connected():
+            return
 
         # Set up port forwarding for observatory
         observatory_port_string = 'tcp:%s' % OBSERVATORY_PORT
-        subprocess.check_call([
-            ADB_PATH, 'forward', observatory_port_string, observatory_port_string
-        ])
+        cmd = [
+            self.adb_path,
+            'forward',
+            observatory_port_string,
+            observatory_port_string
+        ]
+        logging.info(' '.join(cmd))
+        subprocess.check_call(cmd)
 
         sky_server_port = SKY_SERVER_PORT
         pids['sky_server_port'] = sky_server_port
@@ -253,9 +407,14 @@ class StartSky(object):
             pids['sky_server_root'] = sky_server_root
 
         port_string = 'tcp:%s' % sky_server_port
-        subprocess.check_call([
-            ADB_PATH, 'reverse', port_string, port_string
-        ])
+        cmd = [
+            self.adb_path,
+            'reverse',
+            port_string,
+            port_string
+        ]
+        logging.info(' '.join(cmd))
+        subprocess.check_call(cmd)
         pids['remote_sky_server_port'] = sky_server_port
 
         # The load happens on the remote device, use the remote port.
@@ -265,40 +424,19 @@ class StartSky(object):
             url += '?rand=%s' % random.random()
 
         cmd = [
-            ADB_PATH, 'shell',
+            self.adb_path, 'shell',
             'am', 'start',
             '-a', 'android.intent.action.VIEW',
             '-d', url,
         ]
 
         if args.checked:
-            cmd += [ '--ez', 'enable-checked-mode', 'true' ]
+            cmd += ['--ez', 'enable-checked-mode', 'true']
 
-        cmd += [ ANDROID_COMPONENT ]
-
+        cmd += [ANDROID_COMPONENT]
+        logging.info(' '.join(cmd))
         subprocess.check_output(cmd)
 
-
-class StopSky(object):
-    def add_subparser(self, subparsers):
-        stop_parser = subparsers.add_parser('stop',
-            help=('kill all running SkyShell.apk processes'))
-        stop_parser.set_defaults(func=self.run)
-
-    def _run(self, args):
-        with open('/dev/null', 'w') as dev_null:
-            subprocess.call(args, stdout=dev_null, stderr=dev_null)
-
-    def run(self, args, pids):
-        self._run(['fuser', '-k', '%s/tcp' % SKY_SERVER_PORT])
-
-        if 'remote_sky_server_port' in pids:
-            port_string = 'tcp:%s' % pids['remote_sky_server_port']
-            self._run([ADB_PATH, 'reverse', '--remove', port_string])
-
-        self._run([ADB_PATH, 'shell', 'am', 'force-stop', ANDROID_PACKAGE])
-
-        pids.clear()
 
 
 class IOSDevice(object):
@@ -312,6 +450,7 @@ class IOSDevice(object):
                 'which',
                 'ios-deploy'
             ]
+            logging.info(' '.join(cmd))
             out = subprocess.check_output(cmd)
             match = re.search(r'ios-deploy', out)
             cls._has_ios_deploy = match is not None
@@ -332,6 +471,7 @@ class IOSDevice(object):
             '--timeout',
             '1'
         ]
+        logging.info(' '.join(cmd))
         out = subprocess.check_output(cmd)
         match = re.search(r'\[\.\.\.\.\] Found [^\)]*\) connected', out)
         cls._is_connected = match is not None
@@ -349,6 +489,7 @@ class IOSDevice(object):
             '--bundle',
             ios_app_path
         ]
+        logging.info(' '.join(cmd))
         subprocess.check_call(cmd)
 
     @classmethod
@@ -366,6 +507,7 @@ class IOSDevice(object):
             '--to',
             device_path
         ]
+        logging.info(' '.join(cmd))
         subprocess.check_call(cmd)
 
 
@@ -385,6 +527,7 @@ class IOSSimulator(object):
             'list',
             'devices',
         ]
+        logging.info(' '.join(cmd))
         out = subprocess.check_output(cmd)
         match = re.search(r'[^\(]+\(([^\)]+)\) \(Booted\)', out)
         if match is not None and match.group(1) is not None:
@@ -423,6 +566,7 @@ class IOSSimulator(object):
             '-name',
             SKY_SHELL_APP_ID
         ]
+        logging.info(' '.join(cmd))
         out = subprocess.check_output(cmd)
         match = re.search(r'Data\/Application\/([^\/]+)\/Documents\/' + SKY_SHELL_APP_ID, out)
         if match is not None and match.group(1) is not None:
@@ -456,82 +600,91 @@ class IOSSimulator(object):
             os.path.abspath(__file__),
             'ios_sim',
             '-p',
-            # This path manipulation is to work around an issue where simctl fails to correctly parse
-            # paths that start with ../
             ios_app_path,
             'launch'
         ]
+        logging.info(' '.join(cmd))
         subprocess.check_call(cmd)
 
     def get_application_identifier(self, path):
-      identifier = subprocess.check_output(PLIST_BUDDY_PATH + [
-        '-c',
-        'Print CFBundleIdentifier',
-        os.path.join(path, 'Info.plist')
-      ])
-      return identifier.strip()
+        cmd = PLIST_BUDDY_PATH + [
+            '-c',
+            'Print CFBundleIdentifier',
+            os.path.join(path, 'Info.plist')
+        ]
+        logging.info(' '.join(cmd))
+        identifier = subprocess.check_output(cmd)
+        return identifier.strip()
 
     def is_simulator_booted(self):
-      devices = subprocess.check_output(SIMCTL_PATH + [ 'list', 'devices' ]).strip().split('\n')
-      for device in devices:
-        if re.search(r'\(Booted\)', device):
-          return True
-      return False
+        cmd = SIMCTL_PATH + [ 'list', 'devices' ]
+        logging.info(' '.join(cmd))
+        devices = subprocess.check_output(cmd).strip().split('\n')
+        for device in devices:
+            if re.search(r'\(Booted\)', device):
+                return True
+        return False
 
     # Launch whatever simulator the user last used, rather than try to guess which of their simulators they might want to use
     def boot_simulator(self, args, pids):
-      if self.is_simulator_booted():
-        return
-      # Use Popen here because launching the simulator from the command line in this manner doesn't return, so we can't check the result.
-      if args.ios_sim_path:
-        subprocess.Popen(args.ios_sim_path)
-      else:
-        subprocess.Popen(IOS_SIM_PATH)
-      while not self.is_simulator_booted():
-        print('Waiting for iOS Simulator to boot...')
-        time.sleep(0.5)
+        if self.is_simulator_booted():
+            return
+        # Use Popen here because launching the simulator from the command line in this manner doesn't return, so we can't check the result.
+        if args.ios_sim_path:
+            logging.info(args.ios_sim_path)
+            subprocess.Popen(args.ios_sim_path)
+        else:
+            logging.info(IOS_SIM_PATH)
+            subprocess.Popen(IOS_SIM_PATH)
+        while not self.is_simulator_booted():
+            print('Waiting for iOS Simulator to boot...')
+            time.sleep(0.5)
 
     def install_app(self, args, pids):
-      self.boot_simulator(args, pids)
-      cmd = SIMCTL_PATH + [
-        'install',
-        'booted',
-        args.path,
-      ]
-      return subprocess.check_call(cmd)
+        self.boot_simulator(args, pids)
+        cmd = SIMCTL_PATH + [
+            'install',
+            'booted',
+            args.path,
+        ]
+        logging.info(' '.join(cmd))
+        return subprocess.check_call(cmd)
 
     def install_launch_and_wait(self, args, pids, wait):
-      res = self.install_app(args, pids)
-      if res != 0:
-        return res
-      identifier = self.get_application_identifier(args.path)
-      launch_args = [ 'launch' ]
-      if wait:
-        launch_args += [ '-w' ]
-      launch_args += [
-        'booted',
-        identifier,
-        '-target',
-        args.target,
-        '-server',
-        args.server
-      ]
-      return subprocess.check_output(SIMCTL_PATH + launch_args).strip()
+        res = self.install_app(args, pids)
+        if res != 0:
+            return res
+        identifier = self.get_application_identifier(args.path)
+        launch_args = SIMCTL_PATH + ['launch']
+        if wait:
+            launch_args += [ '-w' ]
+        launch_args += [
+            'booted',
+            identifier,
+            '-target',
+            args.target,
+            '-server',
+            args.server
+        ]
+        logging.info(' '.join(launch_args))
+        return subprocess.check_output(launch_args).strip()
 
     def launch_app(self, args, pids):
-      self.install_launch_and_wait(args, pids, False)
+        self.install_launch_and_wait(args, pids, False)
 
     def debug_app(self, args, pids):
-      launch_res = self.install_launch_and_wait(args, pids, True)
-      launch_pid = re.search('.*: (\d+)', launch_res).group(1)
-      return os.system(' '.join(XCRUN_PATH + [
-        'lldb',
-        # TODO(iansf): get this working again
-        # '-s',
-        # os.path.join(os.path.dirname(__file__), 'lldb_start_commands.txt'),
-        '-p',
-        launch_pid,
-      ]))
+        launch_res = self.install_launch_and_wait(args, pids, True)
+        launch_pid = re.search('.*: (\d+)', launch_res).group(1)
+        cmd = XCRUN_PATH + [
+            'lldb',
+            # TODO(iansf): get this working again
+            # '-s',
+            # os.path.join(os.path.dirname(__file__), 'lldb_start_commands.txt'),
+            '-p',
+            launch_pid,
+        ]
+        logging.info(' '.join(cmd))
+        return subprocess.call(cmd)
 
     def add_subparser(self, subparsers):
         simulator_parser = subparsers.add_parser('ios_sim',
@@ -580,6 +733,7 @@ class StartListening(object):
                         'which',
                         'inotifywait'
                     ]
+                    logging.info(' '.join(cmd))
                     out = subprocess.check_output(cmd)
                 except subprocess.CalledProcessError:
                     logging.error('"listen" command is only useful if you have installed inotifywait on Linux.  Run "apt-get install inotify-tools" or equivalent to install it.')
@@ -598,6 +752,7 @@ class StartListening(object):
                         'which',
                         'fswatch'
                     ]
+                    logging.info(' '.join(cmd))
                     out = subprocess.check_output(cmd)
                 except subprocess.CalledProcessError:
                     logging.error('"listen" command is only useful if you have installed fswatch on Mac.  Run "brew install fswatch" to install it with homebrew.')
@@ -614,17 +769,19 @@ class StartListening(object):
                 logging.error('"listen" command is only available on Mac and Linux.')
                 return False
 
+        logging.info(' '.join(self.watch_cmd))
         subprocess.check_call(self.watch_cmd)
         return True
 
     def run(self, args, pids):
+        if args.use_release:
+            logging.info('Note that the listen command is not compatible with the '
+                         'release flag for iOS and iOS simulator builds. If you have '
+                         'installed iOS release builds, your Sky app will fail to '
+                         'reload while using listen.')
         tempdir = tempfile.mkdtemp()
         currdir = os.getcwd()
         while True:
-            # Watch filesystem for changes
-            if not self.watch_dir(currdir):
-                return
-
             logging.info('Updating running Sky apps...')
 
             # Restart the app on Android.  Android does not currently restart using skyx files.
@@ -634,50 +791,64 @@ class StartListening(object):
                 'start',
                 '--poke'
             ]
+            logging.info(' '.join(cmd))
             subprocess.check_call(cmd)
 
-            if not args.local_build:
+            if args.local_build:
                 # Currently sending to iOS only works if you are building Sky locally
                 # since we aren't shipping the sky_snapshot binary yet.
-                continue
 
-            # Build the snapshot
-            sky_snapshot_path = os.path.join(args.sky_src_path, args.ios_sim_debug_build_path, 'clang_x64', 'sky_snapshot')
-            cmd = [
-                sky_snapshot_path,
-                '--package-root=packages',
-                '--snapshot=' + os.path.join(tempdir, 'snapshot_blob.bin'),
-                os.path.join('lib', 'main.dart')
-            ]
-            subprocess.check_call(cmd)
+                # Check if we can make a snapshot
+                sky_snapshot_path = None
+                if args.ios_sim_build_available:
+                    sky_snapshot_path = os.path.join(args.sky_src_path, args.ios_sim_debug_build_path, 'clang_x64', 'sky_snapshot')
+                elif args.ios_build_available:
+                    sky_snapshot_path = os.path.join(args.sky_src_path, args.ios_debug_build_path, 'clang_x64', 'sky_snapshot')
 
-            os.chdir(tempdir)
-            # Turn the snapshot into an app.skyx file
-            cmd = [
-                'zip',
-                '-r',
-                'app.skyx',
-                'snapshot_blob.bin',
-                'action',
-                'content',
-                'navigation'
-            ]
-            subprocess.check_call(cmd)
-            os.chdir(currdir)
+                if sky_snapshot_path is not None:
+                    # If we can make a snapshot, do so and then send it to running iOS instances
+                    cmd = [
+                        sky_snapshot_path,
+                        '--package-root=packages',
+                        '--snapshot=' + os.path.join(tempdir, 'snapshot_blob.bin'),
+                        os.path.join('lib', 'main.dart')
+                    ]
+                    logging.info(' '.join(cmd))
+                    subprocess.check_call(cmd)
 
-            # Copy the app.skyx to the running simulator
-            simulator_app_documents_dir = IOSSimulator.get_simulator_app_documents_dir()
-            if simulator_app_documents_dir is not None:
-                cmd = [
-                    'cp',
-                    os.path.join(tempdir, 'app.skyx'),
-                    simulator_app_documents_dir
-                ]
-                subprocess.check_call(cmd)
+                    os.chdir(tempdir)
+                    # Turn the snapshot into an app.skyx file
+                    cmd = [
+                        'zip',
+                        '-r',
+                        'app.skyx',
+                        'snapshot_blob.bin',
+                        'action',
+                        'content',
+                        'navigation'
+                    ]
+                    logging.info(' '.join(cmd))
+                    subprocess.check_call(cmd)
+                    os.chdir(currdir)
 
-            # Copy the app.skyx to the attached iOS device
-            if IOSDevice.is_connected():
-                IOSDevice.copy_file(SKY_SHELL_APP_ID, os.path.join(tempdir, 'app.skyx'), 'Documents/app.skyx')
+                    # Copy the app.skyx to the running simulator
+                    simulator_app_documents_dir = IOSSimulator.get_simulator_app_documents_dir()
+                    if simulator_app_documents_dir is not None:
+                        cmd = [
+                            'cp',
+                            os.path.join(tempdir, 'app.skyx'),
+                            simulator_app_documents_dir
+                        ]
+                        logging.info(' '.join(cmd))
+                        subprocess.check_call(cmd)
+
+                    # Copy the app.skyx to the attached iOS device
+                    if IOSDevice.is_connected():
+                        IOSDevice.copy_file(SKY_SHELL_APP_ID, os.path.join(tempdir, 'app.skyx'), 'Documents/app.skyx')
+
+            # Watch filesystem for changes
+            if not self.watch_dir(currdir):
+                return
 
 
 class StartTracing(object):
@@ -687,9 +858,16 @@ class StartTracing(object):
         start_tracing_parser.set_defaults(func=self.run)
 
     def run(self, args, pids):
-        subprocess.check_output([ADB_PATH, 'shell',
-            'am', 'broadcast',
-            '-a', 'org.domokit.sky.shell.TRACING_START'])
+        cmd = [
+            ADB_PATH,
+            'shell',
+            'am',
+            'broadcast',
+            '-a',
+            'org.domokit.sky.shell.TRACING_START'
+        ]
+        logging.info(' '.join(cmd))
+        subprocess.check_output(cmd)
 
 
 TRACE_COMPLETE_REGEXP = re.compile('Trace complete')
@@ -703,15 +881,28 @@ class StopTracing(object):
         stop_tracing_parser.set_defaults(func=self.run)
 
     def run(self, args, pids):
-        subprocess.check_output([ADB_PATH, 'logcat', '-c'])
-        subprocess.check_output([ADB_PATH, 'shell',
-            'am', 'broadcast',
-            '-a', 'org.domokit.sky.shell.TRACING_STOP'])
+        cmd = [ADB_PATH, 'logcat', '-c']
+        logging.info(' '.join(cmd))
+        subprocess.check_output(cmd)
+
+        cmd = [
+            ADB_PATH,
+            'shell',
+            'am',
+            'broadcast',
+            '-a',
+            'org.domokit.sky.shell.TRACING_STOP'
+        ]
+        logging.info(' '.join(cmd))
+        subprocess.check_output(cmd)
+
         device_path = None
         is_complete = False
         while not is_complete:
             time.sleep(0.2)
-            log = subprocess.check_output([ADB_PATH, 'logcat', '-d'])
+            cmd = [ADB_PATH, 'logcat', '-d']
+            logging.info(' '.join(cmd))
+            log = subprocess.check_output(cmd)
             if device_path is None:
                 result = TRACE_FILE_REGEXP.search(log)
                 if result:
@@ -721,98 +912,38 @@ class StopTracing(object):
         logging.info('Downloading trace %s ...' % os.path.basename(device_path))
 
         if device_path:
-            subprocess.check_output([ADB_PATH, 'pull', device_path])
-            subprocess.check_output([ADB_PATH, 'shell', 'rm', device_path])
+            cmd = [ADB_PATH, 'pull', device_path]
+            logging.info(' '.join(cmd))
+            subprocess.check_output(cmd)
+
+            cmd = [ADB_PATH, 'shell', 'rm', device_path]
+            logging.info(' '.join(cmd))
+            subprocess.check_output(cmd)
 
 
 class SkyShellRunner(object):
-    def _update_paths(self):
-        global ADB_PATH
-        if 'ANDROID_HOME' in os.environ:
-            android_home_dir = os.environ['ANDROID_HOME']
-            ADB_PATH = os.path.join(android_home_dir, 'sdk', 'platform-tools', 'adb')
-
-    def _is_valid_adb_version(self, adb_version):
-        # Sample output: 'Android Debug Bridge version 1.0.31'
-        version_fields = re.search('(\d+)\.(\d+)\.(\d+)', adb_version)
-        if version_fields:
-            major_version = int(version_fields.group(1))
-            minor_version = int(version_fields.group(2))
-            patch_version = int(version_fields.group(3))
-            if major_version > 1:
-                return True
-            if major_version == 1 and minor_version > 0:
-                return True
-            if major_version == 1 and minor_version == 0 and patch_version >= 32:
-                return True
-            return False
-        else:
-            logging.warn('Unrecognized adb version string. Skipping version check.')
-            return True
-
-    def _check_for_adb(self):
-        try:
-            adb_version = subprocess.check_output([ADB_PATH, 'version'])
-            if self._is_valid_adb_version(adb_version):
-                return True
-
-            adb_path = subprocess.check_output(['which', ADB_PATH]).rstrip()
-            logging.error('"%s" is too old. Need 1.0.32 or later. '
-                'Try setting ANDROID_HOME.' % adb_path)
-            return False
-
-        except OSError:
-            logging.error('"adb" (from the Android SDK) not in $PATH, cannot continue.')
-            return False
-        return True
-
-    def _check_for_lollipop_or_later(self):
-        try:
-            # If the server is automatically restarted, then we get irrelevant
-            # output lines like this, which we want to ignore:
-            #   adb server is out of date.  killing..
-            #   * daemon started successfully *
-
-            subprocess.call([ADB_PATH, 'start-server'])
-            sdk_version = subprocess.check_output(
-                    [ADB_PATH, 'shell', 'getprop', 'ro.build.version.sdk']).rstrip()
-            # Sample output: '22'
-            if not sdk_version.isdigit():
-                logging.error('Unexpected response from getprop: "%s".' % sdk_version)
-                return False
-
-            if int(sdk_version) < 22:
-                logging.error('Version "%s" of the Android SDK is too old. '
-                              'Need Lollipop (22) or later. ' % sdk_version)
-                return False
-
-        except subprocess.CalledProcessError as e:
-            # adb printed the error, so we print nothing.
-            return False
-        return True
-
     def _check_for_dart(self):
         try:
-            subprocess.check_output([DART_PATH, '--version'], stderr=subprocess.STDOUT)
+            cmd = [DART_PATH, '--version']
+            logging.info(' '.join(cmd))
+            subprocess.check_output(cmd, stderr=subprocess.STDOUT)
         except OSError:
             logging.error('"dart" (from the Dart SDK) not in $PATH, cannot continue.')
             return False
         return True
 
     def main(self):
-        logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
-
-        self._update_paths()
-
-        # Checking for lollipop only needs to be done if we are starting an
-        # app, but it has an important side effect, which is to discard any
-        # progress messages if the adb server is restarted.
-        if not self._check_for_adb() or not self._check_for_lollipop_or_later():
-            sys.exit(2)
-        if not self._check_for_dart():
-            sys.exit(2)
+        logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.WARNING)
 
         parser = argparse.ArgumentParser(description='Sky App Runner')
+        parser.add_argument('--verbose', dest='verbose', action='store_true',
+            help='Noisy logging, including all shell commands executed')
+        parser.add_argument('--release', dest='use_release', action='store_true',
+            help='Set this if you are building Sky locally and want to use the release build products. '
+                 'When set, attempts to automaticaly determine sky-src-path if sky-src-path is '
+                 'not set. Using this flag automatically turns on local-build as well, so you do not '
+                 'need to specify both. Note that --release is not compatible with the listen command '
+                 'on iOS devices and simulators. Not normally required.')
         parser.add_argument('--local-build', dest='local_build', action='store_true',
             help='Set this if you are building Sky locally and want to use those build products. '
                  'When set, attempts to automaticaly determine sky-src-path if sky-src-path is '
@@ -824,14 +955,26 @@ class SkyShellRunner(object):
             help='Path to your Android Debug out directory, if you are building Sky locally. '
                  'This path is relative to sky-src-path. Not normally required.',
             default='out/android_Debug/')
+        parser.add_argument('--android-release-build-path', dest='android_release_build_path',
+            help='Path to your Android Release out directory, if you are building Sky locally. '
+                 'This path is relative to sky-src-path. Not normally required.',
+            default='out/android_Release/')
         parser.add_argument('--ios-debug-build-path', dest='ios_debug_build_path',
             help='Path to your iOS Debug out directory, if you are building Sky locally. '
                  'This path is relative to sky-src-path. Not normally required.',
             default='out/ios_Debug/')
+        parser.add_argument('--ios-release-build-path', dest='ios_release_build_path',
+            help='Path to your iOS Release out directory, if you are building Sky locally. '
+                 'This path is relative to sky-src-path. Not normally required.',
+            default='out/ios_Release/')
         parser.add_argument('--ios-sim-debug-build-path', dest='ios_sim_debug_build_path',
             help='Path to your iOS Simulator Debug out directory, if you are building Sky locally. '
                  'This path is relative to sky-src-path. Not normally required.',
             default='out/ios_sim_Debug/')
+        parser.add_argument('--ios-sim-release-build-path', dest='ios_sim_release_build_path',
+            help='Path to your iOS Simulator Release out directory, if you are building Sky locally. '
+                 'This path is relative to sky-src-path. Not normally required.',
+            default='out/ios_sim_Release/')
 
         subparsers = parser.add_subparsers(help='sub-command help')
 
@@ -839,6 +982,18 @@ class SkyShellRunner(object):
             command.add_subparser(subparsers)
 
         args = parser.parse_args()
+        if args.verbose:
+            logging.getLogger().setLevel(logging.INFO)
+
+        if args.use_release:
+            args.local_build = True
+
+        # TODO(iansf): args is unfortunately just a global context variable.  For now, add some additional context to it.
+        args.android_build_available = False
+        args.ios_build_available = False
+        args.ios_sim_build_available = False
+
+        # Also make sure that args is consistent with machine state for local builds
         if args.local_build and args.sky_src_path is None:
             real_sky_path = os.path.realpath(os.path.join(PACKAGES_DIR, 'sky'))
             match = re.match(r'pub.dartlang.org/sky', real_sky_path)
@@ -863,16 +1018,38 @@ class SkyShellRunner(object):
                                 '    path: /path/to/sky_engine/src/sky/packages/material_design_icons\n'
                                 '  sky:\n'
                                 '    path: /path/to/sky_engine/src/sky/packages/sky\n')
+        if args.local_build:
+            if not os.path.isdir(args.sky_src_path):
+                logging.warning('The selected sky-src-path (' + args.sky_src_path + ') does not exist.'
+                                'Disabling local-build flag.')
+                args.local_build = False
+        if args.local_build and args.use_release:
+            if os.path.isdir(os.path.join(args.sky_src_path, args.android_release_build_path)):
+                args.android_build_available = True
+            if os.path.isdir(os.path.join(args.sky_src_path, args.ios_release_build_path)):
+                args.ios_build_available = True
+            if os.path.isdir(os.path.join(args.sky_src_path, args.ios_sim_release_build_path)):
+                args.ios_sim_build_available = True
+        elif args.local_build:
+            if os.path.isdir(os.path.join(args.sky_src_path, args.android_debug_build_path)):
+                args.android_build_available = True
+            if os.path.isdir(os.path.join(args.sky_src_path, args.ios_debug_build_path)):
+                args.ios_build_available = True
+            if os.path.isdir(os.path.join(args.sky_src_path, args.ios_sim_debug_build_path)):
+                args.ios_sim_build_available = True
+
+        if not self._check_for_dart():
+            sys.exit(2)
 
         pids = Pids.read_from(PID_FILE_PATH, PID_FILE_KEYS)
         atexit.register(pids.write_to, PID_FILE_PATH)
         exit_code = 0
         try:
-          exit_code = args.func(args, pids)
+            exit_code = args.func(args, pids)
         except subprocess.CalledProcessError as e:
-          # Don't print a stack trace if the adb command fails.
-          logging.error(e)
-          exit_code = 2
+            # Don't print a stack trace if the adb command fails.
+            logging.error(e)
+            exit_code = 2
         sys.exit(exit_code)
 
 

@@ -53,7 +53,6 @@ _third_party_deps = [
     'third_party/jinja2',
     'third_party/jsr-305',
     'third_party/junit',
-    'third_party/khronos',
     'third_party/libjpeg',
     'third_party/libpng',
     'third_party/libXNVCtrl',
@@ -71,7 +70,6 @@ _third_party_deps = [
 dirs_from_chromium = _base_deps + _build_deps + _chromium_libs + _third_party_deps
 
 dirs_from_mojo = [
-    'gpu',
     'mojo/android',
     'mojo/application',
     'mojo/common',
@@ -80,13 +78,10 @@ dirs_from_mojo = [
     'mojo/data_pipe_utils',
     'mojo/edk',
     'mojo/environment',
-    'mojo/gles2',
-    'mojo/gpu',
     'mojo/icu',
     'mojo/java',
     'mojo/message_pump',
     'mojo/services',
-    'mojo/skia',
     'services/asset_bundle',
     'services/keyboard',
     'services/sensors',
@@ -98,7 +93,6 @@ files_not_to_roll = [
     'build/config/ui.gni',
     'build/ls.py',
     'build/module_args/mojo.gni',
-    'gpu/BUILD.gn',
     'tools/android/download_android_tools.py',
     'tools/android/VERSION_LINUX_NDK',
     'tools/android/VERSION_LINUX_SDK',

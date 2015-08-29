@@ -9,11 +9,12 @@ import 'package:vector_math/vector_math.dart';
 import 'package:sky/base/image_resource.dart';
 import 'package:sky/mojo/asset_bundle.dart';
 import 'package:sky/mojo/net/image_cache.dart' as image_cache;
+import 'package:sky/painting/text_painter.dart';
 import 'package:sky/painting/text_style.dart';
-import 'package:sky/painting/paragraph_painter.dart';
 import 'package:sky/rendering/block.dart';
 import 'package:sky/rendering/box.dart';
 import 'package:sky/rendering/flex.dart';
+import 'package:sky/rendering/grid.dart';
 import 'package:sky/rendering/image.dart';
 import 'package:sky/rendering/object.dart';
 import 'package:sky/rendering/paragraph.dart';
@@ -33,7 +34,6 @@ export 'package:sky/rendering/object.dart' show Point, Offset, Size, Rect, Color
 export 'package:sky/rendering/proxy_box.dart' show BackgroundImage, BoxDecoration, BoxDecorationPosition, BoxShadow, Border, BorderSide, EdgeDims, Shape;
 export 'package:sky/rendering/toggleable.dart' show ValueChanged;
 export 'package:sky/rendering/viewport.dart' show ScrollDirection;
-export 'package:sky/widgets/framework.dart' show Key, GlobalKey, Widget, Component, StatefulComponent, App, runApp, Listener, ParentDataNode;
 
 // PAINTING NODES
 
@@ -454,6 +454,21 @@ class Stack extends MultiChildRenderObjectWrapper {
   RenderStack get renderObject => super.renderObject;
 }
 
+class Grid extends MultiChildRenderObjectWrapper {
+  Grid(List<Widget> children, { Key key, this.maxChildExtent })
+    : super(key: key, children: children);
+
+  final double maxChildExtent;
+
+  RenderGrid createNode() => new RenderGrid(maxChildExtent: maxChildExtent);
+  RenderGrid get renderObject => super.renderObject;
+
+  void syncRenderObject(Widget old) {
+    super.syncRenderObject(old);
+    renderObject.maxChildExtent = maxChildExtent;
+  }
+}
+
 class Positioned extends ParentDataNode {
   Positioned({
     Key key,
@@ -495,7 +510,6 @@ class Flex extends MultiChildRenderObjectWrapper {
     renderObject.alignItems = alignItems;
     renderObject.textBaseline = textBaseline;
   }
-
 }
 
 class Row extends Flex {
@@ -754,7 +768,7 @@ class AssetImage extends Component {
 class WidgetToRenderBoxAdapter extends LeafRenderObjectWrapper {
   WidgetToRenderBoxAdapter(RenderBox renderBox)
     : renderBox = renderBox,
-      super(key: new Key.fromObjectIdentity(renderBox));
+      super(key: new ObjectKey(renderBox));
 
   final RenderBox renderBox;
 

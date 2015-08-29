@@ -10,6 +10,8 @@ import 'package:sky/painting/text_style.dart';
 import 'package:sky/theme/typography.dart' as typography;
 import 'package:sky/widgets/basic.dart';
 import 'package:sky/widgets/default_text_style.dart';
+import 'package:sky/widgets/framework.dart';
+import 'package:sky/widgets/gesture_detector.dart';
 import 'package:sky/widgets/material.dart';
 import 'package:sky/widgets/theme.dart';
 import 'package:sky/widgets/transitions.dart';
@@ -29,8 +31,8 @@ class SnackBarAction extends Component {
   final Function onPressed;
 
   Widget build() {
-    return new Listener(
-      onGestureTap: (_) => onPressed(),
+    return new GestureDetector(
+      onTap: onPressed,
       child: new Container(
         margin: const EdgeDims.only(left: 24.0),
         padding: const EdgeDims.only(top: 14.0, bottom: 14.0),
@@ -39,6 +41,7 @@ class SnackBarAction extends Component {
     );
   }
 }
+
 class SnackBar extends Component {
 
   SnackBar({
@@ -57,11 +60,6 @@ class SnackBar extends Component {
   List<SnackBarAction> actions;
   bool showing;
   SnackBarDismissedCallback onDismissed;
-
-  void _onDismissed() {
-    if (onDismissed != null)
-      onDismissed();
-  }
 
   Widget build() {
     List<Widget> children = [
@@ -84,7 +82,7 @@ class SnackBar extends Component {
       position: new AnimatedValue<Point>(Point.origin,
                                          end: const Point(0.0, -52.0),
                                          curve: easeIn, reverseCurve: easeOut),
-      onDismissed: _onDismissed,
+      onDismissed: onDismissed,
       anchor: anchor,
       child: new Material(
         level: 2,

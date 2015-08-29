@@ -7,6 +7,7 @@ import 'dart:sky' as sky;
 import 'package:sky/widgets/basic.dart';
 import 'package:sky/widgets/icon.dart';
 import 'package:sky/widgets/framework.dart';
+import 'package:sky/widgets/gesture_detector.dart';
 
 class IconButton extends Component {
 
@@ -25,14 +26,11 @@ class IconButton extends Component {
         child: child
       );
     }
-    return new Listener(
+    return new GestureDetector(
+      onTap: onPressed,
       child: new Padding(
         child: child,
-        padding: const EdgeDims.all(8.0)),
-      onGestureTap: (_) {
-        if (onPressed != null)
-          onPressed();
-      }
+        padding: const EdgeDims.all(8.0))
     );
   }
 

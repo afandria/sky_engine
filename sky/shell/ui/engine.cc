@@ -164,8 +164,13 @@ void Engine::OnInputEvent(InputEventPtr event) {
     sky_view_->HandleInputEvent(*web_event);
 }
 
+void Engine::OnPointerPacket(pointer::PointerPacketPtr packet) {
+  // TODO(abarth): Process pointer events in packets.
+}
+
 void Engine::RunFromLibrary(const std::string& name) {
   sky_view_ = blink::SkyView::Create(this);
+  sky_view_->CreateView(blink::WebString::fromUTF8(name));
   sky_view_->RunFromLibrary(blink::WebString::fromUTF8(name),
                             dart_library_provider_.get());
   sky_view_->SetDisplayMetrics(display_metrics_);
@@ -175,6 +180,7 @@ void Engine::RunFromSnapshotStream(
     const std::string& name,
     mojo::ScopedDataPipeConsumerHandle snapshot) {
   sky_view_ = blink::SkyView::Create(this);
+  sky_view_->CreateView(blink::WebString::fromUTF8(name));
   sky_view_->RunFromSnapshot(blink::WebString::fromUTF8(name), snapshot.Pass());
   sky_view_->SetDisplayMetrics(display_metrics_);
 }

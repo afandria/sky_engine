@@ -9,4 +9,8 @@ mojom("interfaces") {
     "input_event.mojom",
     "sky_engine.mojom",
   ]
+
+  deps = [
+    "//sky/services/pointer:interfaces"
+  ]
 }

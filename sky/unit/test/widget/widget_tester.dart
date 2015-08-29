@@ -1,6 +1,10 @@
 import 'dart:sky' as sky;
+
 import 'package:sky/rendering.dart';
 import 'package:sky/widgets.dart';
+import 'package:sky/base/scheduler.dart' as scheduler;
+
+import '../engine/mock_events.dart';
 
 typedef Widget WidgetBuilder();
 
@@ -19,28 +23,6 @@ class TestApp extends App {
       return _builder();
     return new Container();
   }
-}
-
-class TestGestureEvent extends sky.GestureEvent {
-  TestGestureEvent({
-    this.type,
-    this.primaryPointer,
-    this.x,
-    this.y,
-    this.dx,
-    this.dy,
-    this.velocityX,
-    this.velocityY
-  });
-
-  String type;
-  int primaryPointer;
-  double x;
-  double y;
-  double dx;
-  double dy;
-  double velocityX;
-  double velocityY;
 }
 
 class WidgetTester {
@@ -101,18 +83,48 @@ class WidgetTester {
     return box.localToGlobal(box.size.center(Point.origin));
   }
 
+  HitTestResult _hitTest(Point location) => SkyBinding.instance.hitTest(location);
+
+  EventDisposition _dispatchEvent(sky.Event event, HitTestResult result) {
+    return SkyBinding.instance.dispatchEvent(event, result);
+  }
+
   void tap(Widget widget) {
-    dispatchEvent(new TestGestureEvent(type: 'gesturetap'), getCenter(widget));
+    Point location = getCenter(widget);
+    HitTestResult result = _hitTest(location);
+    _dispatchEvent(new TestPointerEvent(type: 'pointerdown', x: location.x, y: location.y), result);
+    _dispatchEvent(new TestPointerEvent(type: 'pointerup', x: location.x, y: location.y), result);
   }
 
-  void dispatchEvent(sky.Event event, Point position) {
-    HitTestResult result = SkyBinding.instance.hitTest(position);
-    SkyBinding.instance.dispatchEvent(event, result);
+  void scroll(Widget widget, Offset offset) {
+    Point startLocation = getCenter(widget);
+    HitTestResult result = _hitTest(startLocation);
+    _dispatchEvent(new TestPointerEvent(type: 'pointerdown', x: startLocation.x, y: startLocation.y), result);
+    Point endLocation = startLocation + offset;
+    _dispatchEvent(
+      new TestPointerEvent(
+        type: 'pointermove',
+        x: endLocation.x,
+        y: endLocation.y,
+        dx: offset.dx,
+        dy: offset.dy
+      ),
+      result
+    );
+    _dispatchEvent(new TestPointerEvent(type: 'pointerup', x: endLocation.x, y: endLocation.y), result);
   }
 
-  void pumpFrame(WidgetBuilder builder) {
+  void dispatchEvent(sky.Event event, Point location) {
+    _dispatchEvent(event, _hitTest(location));
+  }
+
+  void pumpFrame(WidgetBuilder builder, [double frameTimeMs = 0.0]) {
     _app.builder = builder;
-    SkyBinding.instance.beginFrame(0.0);
+    scheduler.beginFrame(frameTimeMs);
+  }
+
+  void pumpFrameWithoutChange([double frameTimeMs = 0.0]) {
+    scheduler.beginFrame(frameTimeMs);
   }
 
 }
