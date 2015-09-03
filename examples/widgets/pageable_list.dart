@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'package:sky/base/lerp.dart';
 import 'package:sky/theme/colors.dart';
 import 'package:sky/widgets.dart';
 
@@ -23,6 +22,7 @@ class PageableListApp extends App {
   List<CardModel> cardModels;
   Size pageSize = new Size(200.0, 200.0);
   ScrollDirection scrollDirection = ScrollDirection.horizontal;
+  bool itemsWrap = false;
 
   void initState() {
     List<Size> cardSizes = [
@@ -32,7 +32,7 @@ class PageableListApp extends App {
     .toList();
 
     cardModels = new List.generate(cardSizes.length, (i) {
-      Color color = lerpColor(Red[300], Blue[900], i / cardSizes.length);
+      Color color = Color.lerp(Red[300], Blue[900], i / cardSizes.length);
       return new CardModel(i, cardSizes[i], color);
     });
 
@@ -67,13 +67,18 @@ class PageableListApp extends App {
     );
   }
 
-  EventDisposition switchScrollDirection() {
+  void switchScrollDirection() {
     setState(() {
       scrollDirection = (scrollDirection == ScrollDirection.vertical)
         ? ScrollDirection.horizontal
         : ScrollDirection.vertical;
     });
-    return EventDisposition.processed;
+  }
+
+  void toggleItemsWrap() {
+    setState(() {
+      itemsWrap = !itemsWrap;
+    });
   }
 
   bool _drawerShowing = false;
@@ -113,6 +118,13 @@ class PageableListApp extends App {
           selected: scrollDirection == ScrollDirection.vertical,
           child: new Text('Vertical Layout'),
           onPressed: switchScrollDirection
+        ),
+        new DrawerItem(
+          onPressed: toggleItemsWrap,
+          child: new Row([
+            new Flexible(child: new Text('Scrolling wraps around')),
+            new Checkbox(value: itemsWrap)
+          ])
         )
       ]
     );
@@ -132,7 +144,7 @@ class PageableListApp extends App {
   Widget buildBody() {
     Widget list = new PageableList<CardModel>(
       items: cardModels,
-      itemsWrap: true,
+      itemsWrap: itemsWrap,
       itemBuilder: buildCard,
       scrollDirection: scrollDirection,
       itemExtent: (scrollDirection == ScrollDirection.vertical)

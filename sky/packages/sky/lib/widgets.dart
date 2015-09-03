@@ -2,51 +2,55 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/// Includes and re-exports all Sky widgets classes.
+// Includes and re-exports all Sky widgets classes.
 
-export 'widgets/animated_component.dart';
-export 'widgets/animated_container.dart';
-export 'widgets/basic.dart';
-export 'widgets/button_base.dart';
-export 'widgets/card.dart';
-export 'widgets/checkbox.dart';
-export 'widgets/date_picker.dart';
-export 'widgets/default_text_style.dart';
-export 'widgets/dialog.dart';
-export 'widgets/dismissable.dart';
-export 'widgets/drag_target.dart';
-export 'widgets/drawer.dart';
-export 'widgets/drawer_divider.dart';
-export 'widgets/drawer_header.dart';
-export 'widgets/drawer_item.dart';
-export 'widgets/flat_button.dart';
-export 'widgets/floating_action_button.dart';
-export 'widgets/focus.dart';
-export 'widgets/framework.dart';
-export 'widgets/gesture_detector.dart';
-export 'widgets/icon.dart';
-export 'widgets/icon_button.dart';
-export 'widgets/ink_well.dart';
-export 'widgets/material.dart';
-export 'widgets/material_button.dart';
-export 'widgets/mimic.dart';
-export 'widgets/mimic_overlay.dart';
-export 'widgets/mixed_viewport.dart';
-export 'widgets/modal_overlay.dart';
-export 'widgets/navigator.dart';
-export 'widgets/popup_menu.dart';
-export 'widgets/popup_menu_item.dart';
-export 'widgets/progress_indicator.dart';
-export 'widgets/radio.dart';
-export 'widgets/raised_button.dart';
-export 'widgets/scaffold.dart';
-export 'widgets/scrollable.dart';
-export 'widgets/snack_bar.dart';
-export 'widgets/switch.dart';
-export 'widgets/tabs.dart';
-export 'widgets/theme.dart';
-export 'widgets/title.dart';
-export 'widgets/tool_bar.dart';
-export 'widgets/transitions.dart';
+/// The Sky widget framework
+library widgets;
+
+export 'package:sky/src/widgets/animated_component.dart';
+export 'package:sky/src/widgets/animated_container.dart';
+export 'package:sky/src/widgets/basic.dart';
+export 'package:sky/src/widgets/button_base.dart';
+export 'package:sky/src/widgets/card.dart';
+export 'package:sky/src/widgets/checkbox.dart';
+export 'package:sky/src/widgets/date_picker.dart';
+export 'package:sky/src/widgets/default_text_style.dart';
+export 'package:sky/src/widgets/dialog.dart';
+export 'package:sky/src/widgets/dismissable.dart';
+export 'package:sky/src/widgets/drag_target.dart';
+export 'package:sky/src/widgets/drawer.dart';
+export 'package:sky/src/widgets/drawer_divider.dart';
+export 'package:sky/src/widgets/drawer_header.dart';
+export 'package:sky/src/widgets/drawer_item.dart';
+export 'package:sky/src/widgets/flat_button.dart';
+export 'package:sky/src/widgets/floating_action_button.dart';
+export 'package:sky/src/widgets/focus.dart';
+export 'package:sky/src/widgets/framework.dart';
+export 'package:sky/src/widgets/gesture_detector.dart';
+export 'package:sky/src/widgets/homogeneous_viewport.dart';
+export 'package:sky/src/widgets/icon.dart';
+export 'package:sky/src/widgets/icon_button.dart';
+export 'package:sky/src/widgets/ink_well.dart';
+export 'package:sky/src/widgets/material.dart';
+export 'package:sky/src/widgets/material_button.dart';
+export 'package:sky/src/widgets/mimic.dart';
+export 'package:sky/src/widgets/mimic_overlay.dart';
+export 'package:sky/src/widgets/mixed_viewport.dart';
+export 'package:sky/src/widgets/modal_overlay.dart';
+export 'package:sky/src/widgets/navigator.dart';
+export 'package:sky/src/widgets/popup_menu.dart';
+export 'package:sky/src/widgets/popup_menu_item.dart';
+export 'package:sky/src/widgets/progress_indicator.dart';
+export 'package:sky/src/widgets/radio.dart';
+export 'package:sky/src/widgets/raised_button.dart';
+export 'package:sky/src/widgets/scaffold.dart';
+export 'package:sky/src/widgets/scrollable.dart';
+export 'package:sky/src/widgets/snack_bar.dart';
+export 'package:sky/src/widgets/switch.dart';
+export 'package:sky/src/widgets/tabs.dart';
+export 'package:sky/src/widgets/theme.dart';
+export 'package:sky/src/widgets/title.dart';
+export 'package:sky/src/widgets/tool_bar.dart';
+export 'package:sky/src/widgets/transitions.dart';
 
 export 'package:vector_math/vector_math.dart' show Matrix4;

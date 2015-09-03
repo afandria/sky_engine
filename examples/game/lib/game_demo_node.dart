@@ -4,7 +4,7 @@ final double _gameSizeWidth = 320.0;
 double _gameSizeHeight = 320.0;
 
 final double _chunkSpacing = 640.0;
-final int _chunksPerLevel = 5;
+final int _chunksPerLevel = 9;
 
 final bool _drawDebug = false;
 
@@ -80,7 +80,6 @@ class GameDemoNode extends NodeWithSize {
   PlayerState _playerState;
 
   // Game properties
-  double _scrollSpeed = 2.0;
   double _scroll = 0.0;
 
   int _framesToFire = 0;
@@ -95,11 +94,11 @@ class GameDemoNode extends NodeWithSize {
 
   void update(double dt) {
     // Scroll the level
-    _scroll = _level.scroll(_scrollSpeed);
-    _starField.move(0.0, _scrollSpeed);
+    _scroll = _level.scroll(_playerState.scrollSpeed);
+    _starField.move(0.0, _playerState.scrollSpeed);
 
-    _background.move(_scrollSpeed * 0.1);
-    _nebula.move(_scrollSpeed);
+    _background.move(_playerState.scrollSpeed * 0.1);
+    _nebula.move(_playerState.scrollSpeed);
 
     // Add objects
     addObjects();
@@ -190,44 +189,49 @@ class GameDemoNode extends NodeWithSize {
   }
 
   void addLevelChunk(int chunk, double yPos) {
-    if (chunk == 0) {
-      // Leave the first chunk empty
-      return;
-    }
-
-    chunk -= 1;
-
     int level = chunk ~/ _chunksPerLevel;
     int part = chunk % _chunksPerLevel;
 
     if (part == 0) {
-      _objectFactory.addAsteroids(10 + level * 4, yPos, 0.0 + (level * 0.2).clamp(0.0, 0.7));
-    } else if  (part == 1) {
-      _objectFactory.addEnemyScoutSwarm(4 + level * 2, yPos);
+      LevelLabel lbl = new LevelLabel(_objectFactory, level + 1);
+      lbl.position = new Point(0.0, yPos + _chunkSpacing / 2.0 - 150.0);
+      _level.addChild(lbl);
+    } else if (part == 1) {
+      _objectFactory.addAsteroids(10 + level * 2, yPos, 0.0 + (level * 0.2).clamp(0.0, 0.7));
     } else if (part == 2) {
-      _objectFactory.addAsteroids(10 + level * 4, yPos, 0.0 + (level * 0.2).clamp(0.0, 0.7));
+      _objectFactory.addEnemyScoutSwarm(4 + level * 2, yPos);
     } else if (part == 3) {
-      _objectFactory.addEnemyDestroyerSwarm(2 + level, yPos);
+      _objectFactory.addAsteroids(10 + level * 2, yPos, 0.0 + (level * 0.2).clamp(0.0, 0.7));
     } else if (part == 4) {
-      _objectFactory.addAsteroids(10 + level * 4, yPos, 0.0 + (level * 0.2).clamp(0.0, 0.7));
+      _objectFactory.addEnemyDestroyerSwarm(2 + level, yPos);
+    } else if (part == 5) {
+      _objectFactory.addAsteroids(10 + level * 2, yPos, 0.0 + (level * 0.2).clamp(0.0, 0.7));
+    } else if (part == 6) {
+      _objectFactory.addEnemyScoutSwarm(4 + level * 2, yPos);
+    } else if (part == 7) {
+      _objectFactory.addAsteroids(10 + level * 2, yPos, 0.0 + (level * 0.2).clamp(0.0, 0.7));
+    } else if (part == 8) {
+      _objectFactory.addBossFight(level, yPos);
     }
   }
 
   void fire() {
-    Laser shot0 = new Laser(_objectFactory, -90.0);
+    int laserLevel = _objectFactory.playerState.laserLevel;
+
+    Laser shot0 = new Laser(_objectFactory, laserLevel, -90.0);
     shot0.position = _level.ship.position + new Offset(17.0, -10.0);
     _level.addChild(shot0);
 
-    Laser shot1 = new Laser(_objectFactory, -90.0);
+    Laser shot1 = new Laser(_objectFactory, laserLevel, -90.0);
     shot1.position = _level.ship.position + new Offset(-17.0, -10.0);
     _level.addChild(shot1);
 
     if (_playerState.sideLaserActive) {
-      Laser shot2 = new Laser(_objectFactory, 0.0);
+      Laser shot2 = new Laser(_objectFactory, laserLevel, -45.0);
       shot2.position = _level.ship.position + new Offset(17.0, -10.0);
       _level.addChild(shot2);
 
-      Laser shot3 = new Laser(_objectFactory, 180.0);
+      Laser shot3 = new Laser(_objectFactory, laserLevel, -135.0);
       shot3.position = _level.ship.position + new Offset(-17.0, -10.0);
       _level.addChild(shot3);
     }

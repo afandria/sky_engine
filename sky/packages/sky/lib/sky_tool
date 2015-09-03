@@ -9,6 +9,7 @@ import errno
 import hashlib
 import json
 import logging
+import multiprocessing
 import os
 import platform
 import random
@@ -146,11 +147,78 @@ def _url_for_path(port, root, path):
     return 'http://localhost:%s/%s' % (port, relative_path)
 
 
+class SkyLogs(object):
+    def add_subparser(self, subparsers):
+        logs_parser = subparsers.add_parser('logs',
+            help='Show logs for running Sky apps')
+        logs_parser.add_argument('--clear', action='store_true', dest='clear_logs',
+            help='Clear log history before reading from logs (currently only implemented for Android)')
+        logs_parser.set_defaults(func=self.run)
+
+    def run(self, args, pids):
+        android_log_reader = None
+        ios_dev_log_reader = None
+        ios_sim_log_reader = None
+
+        android = AndroidDevice()
+        if android.is_connected():
+            android_log_reader = android.logs(args.clear_logs)
+
+        if IOSDevice.is_connected():
+            ios_dev_log_reader = IOSDevice.logs(args.clear_logs)
+
+        if IOSSimulator.is_connected():
+            ios_sim_log_reader = IOSSimulator.logs(args.clear_logs)
+
+        if android_log_reader is not None:
+            try:
+                android_log_reader.join()
+            except KeyboardInterrupt:
+                pass
+
+        if ios_dev_log_reader is not None:
+            try:
+                ios_dev_log_reader.join()
+            except KeyboardInterrupt:
+                pass
+
+        if ios_sim_log_reader is not None:
+            try:
+                ios_sim_log_reader.join()
+            except KeyboardInterrupt:
+                pass
+
+
+class InstallSky(object):
+    def add_subparser(self, subparsers):
+        install_parser = subparsers.add_parser('install',
+            help='install SkyShell on Android and iOS devices and simulators')
+        install_parser.set_defaults(func=self.run)
+
+    def run(self, args, pids):
+        android = AndroidDevice()
+
+        # Install on connected Android device
+        if android.is_connected() and args.android_build_available:
+            android.install_apk(android.get_apk_path(args))
+
+        # Install on connected iOS device
+        if IOSDevice.is_connected() and args.ios_build_available:
+            IOSDevice.install_app(IOSDevice.get_app_path(args))
+
+        # Install on iOS simulator if it's running
+        if IOSSimulator.is_booted() and args.ios_sim_build_available:
+            IOSSimulator.fork_install_app(IOSSimulator.get_app_path(args))
+
+    # TODO(iansf): get rid of need for args
+    def needs_install(self, args):
+        return AndroidDevice().needs_install(args) or IOSDevice.needs_install(args) or IOSSimulator.needs_install(args)
+
+
 class StartSky(object):
     def add_subparser(self, subparsers):
         start_parser = subparsers.add_parser('start',
             help='launch %s on the device' % APK_NAME)
-        start_parser.add_argument('--install', action='store_true')
         start_parser.add_argument('--poke', action='store_true')
         start_parser.add_argument('--checked', action='store_true')
         start_parser.add_argument('project_or_path', nargs='?', type=str,
@@ -161,16 +229,12 @@ class StartSky(object):
         if not args.poke:
             StopSky().run(args, pids)
 
-        android = AndroidDevice()
+            # Only install if the user did not specify a poke
+            installer = InstallSky()
+            if installer.needs_install(args):
+                installer.run(args, pids)
 
         project_or_path = os.path.abspath(args.project_or_path)
-
-        if args.android_build_available and args.use_release:
-            apk_path = os.path.join(os.path.normpath(args.sky_src_path), args.android_release_build_path, 'apks', APK_NAME)
-        elif args.android_build_available:
-            apk_path = os.path.join(os.path.normpath(args.sky_src_path), args.android_debug_build_path, 'apks', APK_NAME)
-        else:
-            apk_path = os.path.join(APK_DIR, APK_NAME)
 
         if os.path.isdir(project_or_path):
             sky_server_root = project_or_path
@@ -192,38 +256,7 @@ class StartSky(object):
             logging.error('%s is not a valid packages path.' % package_root)
             return 2
 
-        if not android.is_package_installed(ANDROID_PACKAGE):
-            logging.info('%s is not on the device. Installing now...' % APK_NAME)
-            args.install = True
-        elif android.get_device_apk_sha1(apk_path) != android.get_source_sha1(apk_path):
-            logging.info('%s on the device is out of date. Installing now...' % APK_NAME)
-            args.install = True
-
-        if args.install:
-            # Install on connected Android device
-            if android.is_connected() and args.android_build_available:
-                if args.use_release:
-                    apk_path = os.path.join(args.sky_src_path, args.android_release_build_path, 'apks', APK_NAME)
-                else:
-                    apk_path = os.path.join(args.sky_src_path, args.android_debug_build_path, 'apks', APK_NAME)
-                android.install_apk(apk_path)
-
-            # Install on connected iOS device
-            if IOSDevice.is_connected() and args.ios_build_available:
-                if args.use_release:
-                    app_path = os.path.join(args.sky_src_path, args.ios_release_build_path, IOS_APP_NAME)
-                else:
-                    app_path = os.path.join(args.sky_src_path, args.ios_debug_build_path, IOS_APP_NAME)
-                IOSDevice.install_app(app_path)
-
-            # Install on iOS simulator if it's running
-            if IOSSimulator.is_booted() and args.ios_sim_build_available:
-                if args.use_release:
-                    app_path = os.path.join(args.sky_src_path, args.ios_sim_release_build_path, IOS_APP_NAME)
-                else:
-                    app_path = os.path.join(args.sky_src_path, args.ios_sim_debug_build_path, IOS_APP_NAME)
-                IOSSimulator.fork_install_app(app_path)
-
+        android = AndroidDevice()
         # TODO(iansf): fix this so that we don't have to pass sky_server_root, main_dart, pid, and args.
         android.setup_servers(sky_server_root, main_dart, pids, args)
 
@@ -361,8 +394,28 @@ class AndroidDevice(object):
     def get_source_sha1(self, apk_path):
         return hashlib.sha1(open(apk_path, 'rb').read()).hexdigest()
 
+    # TODO(iansf): get rid of need for args
+    def get_apk_path(self, args):
+        if args.android_build_available and args.use_release:
+            return os.path.join(os.path.normpath(args.sky_src_path), args.android_release_build_path, 'apks', APK_NAME)
+        elif args.android_build_available and args.local_build:
+            return os.path.join(os.path.normpath(args.sky_src_path), args.android_debug_build_path, 'apks', APK_NAME)
+        else:
+            return os.path.join(APK_DIR, APK_NAME)
+
     def is_connected(self):
         return self.has_valid_android
+
+    def needs_install(self, args):
+        apk_path = self.get_apk_path(args)
+
+        if not self.is_package_installed(ANDROID_PACKAGE):
+            logging.info('%s is not on the device. Installing now...' % APK_NAME)
+            return True
+        elif self.get_device_apk_sha1(apk_path) != self.get_source_sha1(apk_path):
+            logging.info('%s on the device is out of date. Installing now...' % APK_NAME)
+            return True
+        return False
 
     def install_apk(self, apk_path):
         if not os.path.exists(apk_path):
@@ -437,6 +490,41 @@ class AndroidDevice(object):
         logging.info(' '.join(cmd))
         subprocess.check_output(cmd)
 
+    def logs(self, clear=False):
+        def do_logs():
+            if clear:
+                cmd = [
+                    self.adb_path,
+                    'logcat',
+                    '-c'
+                ]
+                logging.info(' '.join(cmd))
+                subprocess.check_call(cmd)
+
+            cmd = [
+                self.adb_path,
+                'logcat',
+                '-s',
+                'sky',
+                'chromium',
+            ]
+            logging.info(' '.join(cmd))
+            log_process = subprocess.Popen(cmd, bufsize=1, stdout=subprocess.PIPE)
+            while True:
+                try:
+                    log_line = log_process.stdout.readline()
+                    if log_line == '':
+                        if log_process.poll() != None:
+                            logging.error('The Android logging process has quit unexpectedly. Please call the "logs" command again.')
+                            break
+                    sys.stdout.write('ANDROID: ' + log_line)
+                    sys.stdout.flush()
+                except KeyboardInterrupt:
+                    break
+        log_reader = multiprocessing.Process(target=do_logs)
+        log_reader.daemon = True
+        log_reader.start()
+        return log_reader
 
 
 class IOSDevice(object):
@@ -465,50 +553,106 @@ class IOSDevice(object):
             return False
         if cls._is_connected:
             return True
-        cmd = [
-            'ios-deploy',
-            '--detect',
-            '--timeout',
-            '1'
-        ]
-        logging.info(' '.join(cmd))
-        out = subprocess.check_output(cmd)
-        match = re.search(r'\[\.\.\.\.\] Found [^\)]*\) connected', out)
-        cls._is_connected = match is not None
+        try:
+            cmd = [
+                'ios-deploy',
+                '--detect',
+                '--timeout',
+                '1'
+            ]
+            logging.info(' '.join(cmd))
+            out = subprocess.check_output(cmd)
+            match = re.search(r'\[\.\.\.\.\] Found [^\)]*\) connected', out)
+            cls._is_connected = match is not None
+        except subprocess.CalledProcessError:
+            cls._is_connected = False
         return cls._is_connected
+
+    @classmethod
+    def get_app_path(cls, args):
+        if args.use_release:
+            return os.path.join(args.sky_src_path, args.ios_release_build_path, IOS_APP_NAME)
+        else:
+            return os.path.join(args.sky_src_path, args.ios_debug_build_path, IOS_APP_NAME)
+
+    @classmethod
+    def needs_install(cls, args):
+        return cls.is_connected()
 
     @classmethod
     def install_app(cls, ios_app_path):
         if not cls.has_ios_deploy():
             return
-        cmd = [
-            'ios-deploy',
-            '--justlaunch',
-            '--timeout',
-            '10', # Smaller timeouts cause it to exit before having launched the app
-            '--bundle',
-            ios_app_path
-        ]
-        logging.info(' '.join(cmd))
-        subprocess.check_call(cmd)
+        try:
+            cmd = [
+                'ios-deploy',
+                '--justlaunch',
+                '--timeout',
+                '10', # Smaller timeouts cause it to exit before having launched the app
+                '--bundle',
+                ios_app_path
+            ]
+            logging.info(' '.join(cmd))
+            subprocess.check_call(cmd)
+        except subprocess.CalledProcessError:
+            pass
 
     @classmethod
     def copy_file(cls, bundle_id, local_path, device_path):
         if not cls.has_ios_deploy():
             return
-        cmd = [
-            'ios-deploy',
-            '-t',
-            '1',
-            '--bundle_id',
-            bundle_id,
-            '--upload',
-            local_path,
-            '--to',
-            device_path
-        ]
-        logging.info(' '.join(cmd))
-        subprocess.check_call(cmd)
+        try:
+            cmd = [
+                'ios-deploy',
+                '-t',
+                '1',
+                '--bundle_id',
+                bundle_id,
+                '--upload',
+                local_path,
+                '--to',
+                device_path
+            ]
+            logging.info(' '.join(cmd))
+            subprocess.check_call(cmd)
+        except subprocess.CalledProcessError:
+            pass
+
+    @classmethod
+    def logs(cls, clear=False):
+        try:
+            cmd = [
+                'which',
+                'idevicesyslog'
+            ]
+            logging.info(' '.join(cmd))
+            subprocess.check_call(cmd)
+        except subprocess.CalledProcessError:
+            logging.error('"log" command only works with iOS devices if you have installed idevicesyslog. Run "brew install libimobiledevice" to install it with homebrew.')
+            return None
+
+        def do_logs():
+            cmd = [
+                'idevicesyslog',
+            ]
+            logging.info(' '.join(cmd))
+            log_process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+            while True:
+                try:
+                    log_line = log_process.stdout.readline()
+                    if log_line == '':
+                        if log_process.poll() != None:
+                            logging.error('The iOS logging process has quit unexpectedly. Please call the "logs" command again.')
+                            break
+                    if re.match(r'.*SkyShell.*', log_line) is not None:
+                        sys.stdout.write('IOS DEV: ' + log_line)
+                        sys.stdout.flush()
+                except KeyboardInterrupt:
+                    break
+        log_reader = multiprocessing.Process(target=do_logs)
+        log_reader.daemon = True
+        log_reader.start()
+        return log_reader
 
 
 class IOSSimulator(object):
@@ -517,6 +661,10 @@ class IOSSimulator(object):
         if platform.system() != 'Darwin':
             return False
         return cls.get_simulator_device_id() is not None
+
+    @classmethod
+    def is_connected(cls):
+        return cls.is_booted()
 
     _device_id = None
     @classmethod
@@ -595,6 +743,44 @@ class IOSSimulator(object):
         return cls._simulator_app_documents_dir
 
     @classmethod
+    def get_app_path(cls, args):
+        if args.use_release:
+            return os.path.join(args.sky_src_path, args.ios_sim_release_build_path, IOS_APP_NAME)
+        else:
+            return os.path.join(args.sky_src_path, args.ios_sim_debug_build_path, IOS_APP_NAME)
+
+    @classmethod
+    def needs_install(cls, args):
+        return cls.is_booted()
+
+    @classmethod
+    def logs(cls, clear=False):
+        def do_logs():
+            cmd = [
+                'tail',
+                '-f',
+                os.path.expanduser('~/Library/Logs/CoreSimulator/' + cls.get_simulator_device_id() + '/system.log'),
+            ]
+            logging.info(' '.join(cmd))
+            log_process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+            while True:
+                try:
+                    log_line = log_process.stdout.readline()
+                    if log_line == '':
+                        if log_process.poll() != None:
+                            logging.error('The iOS Simulator logging process has quit unexpectedly. Please call the "logs" command again.')
+                            break
+                    if re.match(r'.*SkyShell.*', log_line) is not None:
+                        sys.stdout.write('IOS SIM: ' + log_line)
+                        sys.stdout.flush()
+                except KeyboardInterrupt:
+                    break
+        log_reader = multiprocessing.Process(target=do_logs)
+        log_reader.daemon = True
+        log_reader.start()
+        return log_reader
+
+    @classmethod
     def fork_install_app(cls, ios_app_path):
         cmd = [
             os.path.abspath(__file__),
@@ -605,6 +791,17 @@ class IOSSimulator(object):
         ]
         logging.info(' '.join(cmd))
         subprocess.check_call(cmd)
+
+    def _process_args(self, args):
+        if args.ios_sim_build_path is None:
+            if args.ios_sim_build_available:
+                if args.use_release:
+                    args.ios_sim_build_path = os.path.join(args.sky_src_path, args.ios_sim_release_build_path, IOS_APP_NAME)
+                elif args.local_build:
+                    args.ios_sim_build_path = os.path.join(args.sky_src_path, args.ios_sim_debug_build_path, IOS_APP_NAME)
+        if args.ios_sim_build_path is None:
+            logging.error('ios_sim commands require a valid -p argument if not using the --release or --local-build global arguments')
+            sys.exit(2)
 
     def get_application_identifier(self, path):
         cmd = PLIST_BUDDY_PATH + [
@@ -627,6 +824,8 @@ class IOSSimulator(object):
 
     # Launch whatever simulator the user last used, rather than try to guess which of their simulators they might want to use
     def boot_simulator(self, args, pids):
+        # Guarantee that the args get processed, since all of the commands funnel through here.
+        self._process_args(args)
         if self.is_simulator_booted():
             return
         # Use Popen here because launching the simulator from the command line in this manner doesn't return, so we can't check the result.
@@ -645,7 +844,7 @@ class IOSSimulator(object):
         cmd = SIMCTL_PATH + [
             'install',
             'booted',
-            args.path,
+            args.ios_sim_build_path,
         ]
         logging.info(' '.join(cmd))
         return subprocess.check_call(cmd)
@@ -654,7 +853,7 @@ class IOSSimulator(object):
         res = self.install_app(args, pids)
         if res != 0:
             return res
-        identifier = self.get_application_identifier(args.path)
+        identifier = self.get_application_identifier(args.ios_sim_build_path)
         launch_args = SIMCTL_PATH + ['launch']
         if wait:
             launch_args += [ '-w' ]
@@ -691,28 +890,28 @@ class IOSSimulator(object):
             help='A script that launches an'
                  ' application in the simulator and attaches'
                  ' the debugger to it.')
-        simulator_parser.add_argument('-p', dest='path', required=True,
-            help='Path to the simulator application.')
+        simulator_parser.add_argument('-p', dest='ios_sim_build_path', required=False,
+            help='Path to the simulator app build. Defaults to values specified by '
+                 'the sky_src_path and ios_sim_[debug|release]_build_path parameters, '
+                 'which are normally specified by using the local-build or release '
+                 'parameters. Not normally required.')
         simulator_parser.add_argument('-t', dest='target', required=False,
             default='examples/demo_launcher/lib/main.dart',
-            help='Sky server-relative path to the Sky app to run.')
+            help='Sky server-relative path to the Sky app to run. Not normally required.')
         simulator_parser.add_argument('-s', dest='server', required=False,
             default='localhost:8080',
-            help='Sky server address.')
+            help='Sky server address. Not normally required.')
         simulator_parser.add_argument('--ios_sim_path', dest='ios_sim_path',
             help='Path to your iOS Simulator executable. '
                  'Not normally required.')
 
         subparsers = simulator_parser.add_subparsers()
-        launch_parser = subparsers.add_parser('launch', help='Launch app')
-        launch_parser.set_defaults(func=self.launch_app)
         install_parser = subparsers.add_parser('install', help='Install app')
         install_parser.set_defaults(func=self.install_app)
-        debug_parser = subparsers.add_parser('debug', help='Debug app')
+        launch_parser = subparsers.add_parser('launch', help='Launch app. Automatically installs.')
+        launch_parser.set_defaults(func=self.launch_app)
+        debug_parser = subparsers.add_parser('debug', help='Debug app. Automatically installs and launches.')
         debug_parser.set_defaults(func=self.debug_app)
-
-    def run(self, args, pids):
-      return args.func(args)
 
 
 class StartListening(object):
@@ -912,6 +1111,16 @@ class StopTracing(object):
         logging.info('Downloading trace %s ...' % os.path.basename(device_path))
 
         if device_path:
+            cmd = [ADB_PATH, 'root']
+            logging.info(' '.join(cmd))
+            output = subprocess.check_output(cmd)
+            match = re.match(r'.*cannot run as root.*', output)
+            if match is not None:
+                logging.error('Unable to download trace file %s\n'
+                              'You need to be able to run adb as root '
+                              'on your android device' % device_path)
+                return 2
+
             cmd = [ADB_PATH, 'pull', device_path]
             logging.info(' '.join(cmd))
             subprocess.check_output(cmd)
@@ -934,6 +1143,9 @@ class SkyShellRunner(object):
 
     def main(self):
         logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.WARNING)
+        real_path = os.path.realpath(__file__)
+        if re.match(r'.*src\/sky\/packages\/sky\/', real_path) is not None:
+            logging.warning('Using overridden sky package located at ' + os.path.dirname(os.path.dirname(real_path)))
 
         parser = argparse.ArgumentParser(description='Sky App Runner')
         parser.add_argument('--verbose', dest='verbose', action='store_true',
@@ -978,7 +1190,7 @@ class SkyShellRunner(object):
 
         subparsers = parser.add_subparsers(help='sub-command help')
 
-        for command in [StartSky(), StopSky(), StartListening(), StartTracing(), StopTracing(), IOSSimulator()]:
+        for command in [SkyLogs(), InstallSky(), StartSky(), StopSky(), StartListening(), StartTracing(), StopTracing(), IOSSimulator()]:
             command.add_subparser(subparsers)
 
         args = parser.parse_args()
@@ -1037,6 +1249,9 @@ class SkyShellRunner(object):
                 args.ios_build_available = True
             if os.path.isdir(os.path.join(args.sky_src_path, args.ios_sim_debug_build_path)):
                 args.ios_sim_build_available = True
+        else:
+            if os.path.isdir(APK_DIR):
+                args.android_build_available = True
 
         if not self._check_for_dart():
             sys.exit(2)

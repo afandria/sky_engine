@@ -83,35 +83,47 @@ class WidgetTester {
     return box.localToGlobal(box.size.center(Point.origin));
   }
 
+  Point getTopLeft(Widget widget) {
+    assert(widget != null);
+    RenderBox box = widget.renderObject as RenderBox;
+    assert(box != null);
+    return box.localToGlobal(Point.origin);
+  }
+
+  Point getTopRight(Widget widget) {
+    assert(widget != null);
+    RenderBox box = widget.renderObject as RenderBox;
+    assert(box != null);
+    return box.localToGlobal(box.size.topRight(Point.origin));
+  }
+
   HitTestResult _hitTest(Point location) => SkyBinding.instance.hitTest(location);
 
   EventDisposition _dispatchEvent(sky.Event event, HitTestResult result) {
     return SkyBinding.instance.dispatchEvent(event, result);
   }
 
-  void tap(Widget widget) {
-    Point location = getCenter(widget);
-    HitTestResult result = _hitTest(location);
-    _dispatchEvent(new TestPointerEvent(type: 'pointerdown', x: location.x, y: location.y), result);
-    _dispatchEvent(new TestPointerEvent(type: 'pointerup', x: location.x, y: location.y), result);
+  void tap(Widget widget, { int pointer: 1 }) {
+    tapAt(getCenter(widget), pointer: pointer);
   }
 
-  void scroll(Widget widget, Offset offset) {
+  void tapAt(Point location, { int pointer: 1 }) {
+    HitTestResult result = _hitTest(location);
+    TestPointer p = new TestPointer(pointer);
+    _dispatchEvent(p.down(location), result);
+    _dispatchEvent(p.up(), result);
+  }
+
+  void scroll(Widget widget, Offset offset, { int pointer: 1 }) {
     Point startLocation = getCenter(widget);
-    HitTestResult result = _hitTest(startLocation);
-    _dispatchEvent(new TestPointerEvent(type: 'pointerdown', x: startLocation.x, y: startLocation.y), result);
     Point endLocation = startLocation + offset;
-    _dispatchEvent(
-      new TestPointerEvent(
-        type: 'pointermove',
-        x: endLocation.x,
-        y: endLocation.y,
-        dx: offset.dx,
-        dy: offset.dy
-      ),
-      result
-    );
-    _dispatchEvent(new TestPointerEvent(type: 'pointerup', x: endLocation.x, y: endLocation.y), result);
+    TestPointer p = new TestPointer(pointer);
+    // Events for the entire press-drag-release gesture are dispatched
+    // to the widgets "hit" by the pointer down event.
+    HitTestResult result = _hitTest(startLocation);
+    _dispatchEvent(p.down(startLocation), result);
+    _dispatchEvent(p.move(endLocation), result);
+    _dispatchEvent(p.up(), result);
   }
 
   void dispatchEvent(sky.Event event, Point location) {

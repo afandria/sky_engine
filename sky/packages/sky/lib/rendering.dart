@@ -2,23 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/// Includes and re-exports all Sky rendering classes.
+// Includes and re-exports all Sky rendering classes.
 
-export 'rendering/auto_layout.dart';
-export 'rendering/block.dart';
-export 'rendering/box.dart';
-export 'rendering/flex.dart';
-export 'rendering/grid.dart';
-export 'rendering/image.dart';
-export 'rendering/layer.dart';
-export 'rendering/object.dart';
-export 'rendering/paragraph.dart';
-export 'rendering/proxy_box.dart';
-export 'rendering/shifted_box.dart';
-export 'rendering/sky_binding.dart';
-export 'rendering/stack.dart';
-export 'rendering/toggleable.dart';
-export 'rendering/view.dart';
-export 'rendering/viewport.dart';
+/// The Sky render tree
+library rendering;
+
+export 'package:sky/src/rendering/auto_layout.dart';
+export 'package:sky/src/rendering/block.dart';
+export 'package:sky/src/rendering/box.dart';
+export 'package:sky/src/rendering/flex.dart';
+export 'package:sky/src/rendering/grid.dart';
+export 'package:sky/src/rendering/image.dart';
+export 'package:sky/src/rendering/layer.dart';
+export 'package:sky/src/rendering/object.dart';
+export 'package:sky/src/rendering/paragraph.dart';
+export 'package:sky/src/rendering/proxy_box.dart';
+export 'package:sky/src/rendering/shifted_box.dart';
+export 'package:sky/src/rendering/sky_binding.dart';
+export 'package:sky/src/rendering/stack.dart';
+export 'package:sky/src/rendering/toggleable.dart';
+export 'package:sky/src/rendering/view.dart';
+export 'package:sky/src/rendering/viewport.dart';
 
 export 'package:vector_math/vector_math.dart' show Matrix4;

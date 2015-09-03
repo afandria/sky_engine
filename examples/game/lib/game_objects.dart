@@ -44,9 +44,7 @@ abstract class GameObject extends Node {
 
       Collectable powerUp = createPowerUp();
       if (powerUp != null) {
-        powerUp.position = position;
-        powerUp.setupActions();
-        parent.addChild(powerUp);
+        f.addGameObject(powerUp, position);
       }
 
       removeFromParent();
@@ -83,6 +81,23 @@ abstract class GameObject extends Node {
   }
 
   void setupActions() {
+  }
+}
+
+class LevelLabel extends GameObject {
+  LevelLabel(GameObjectFactory f, int level) : super(f) {
+    canDamageShip = false;
+    canBeDamaged = false;
+
+    Label lbl = new Label(
+      "L E V E L $level",
+      new TextStyle(
+        textAlign: TextAlign.center,
+        color:new Color(0xffffffff),
+        fontSize: 24.0,
+        fontWeight: FontWeight.w600
+      ));
+    addChild(lbl);
   }
 }
 
@@ -139,31 +154,62 @@ class Ship extends GameObject {
 }
 
 class Laser extends GameObject {
-  double impact = 1.0;
+  double impact = 0.0;
 
-  Laser(GameObjectFactory f, double r) : super(f) {
-    // Add sprite
-    _sprt = new Sprite(f.sheet["explosion_particle.png"]);
-    _sprt.scale = 0.5;
-    _sprt.colorOverlay = new Color(0xff95f4fb);
-    _sprt.transferMode = sky.TransferMode.plus;
-    _sprt.rotation = r + 90.0;
-    addChild(_sprt);
+  final List<Color> laserColors = [
+    new Color(0xff95f4fb),
+    new Color(0xff5bff35),
+    new Color(0xffff886c),
+    new Color(0xffffd012),
+    new Color(0xfffd7fff)
+  ];
+
+  Laser(GameObjectFactory f, int level, double r) : super(f) {
+    // Game object properties
     radius = 10.0;
     removeLimit = 640.0;
-
-
     canDamageShip = false;
     canBeDamaged = false;
+    impact = 1.0 + level * 0.5;
 
+    // Offset for movement
     _offset = new Offset(math.cos(radians(r)) * 10.0, math.sin(radians(r)) * 10.0);
+
+    // Drawing properties
+    rotation = r + 90.0;
+    int numLasers = level % 3 + 1;
+    Color laserColor = laserColors[(level ~/ 3) % laserColors.length];
+
+    // Add sprites
+    List<Sprite> sprites = [];
+    for (int i = 0; i < numLasers; i++) {
+      Sprite sprt = new Sprite(f.sheet["explosion_particle.png"]);
+      sprt.scale = 0.5;
+      sprt.colorOverlay = laserColor;
+      sprt.transferMode = sky.TransferMode.plus;
+      addChild(sprt);
+      sprites.add(sprt);
+    }
+
+    // Position the individual sprites
+    if (numLasers == 2) {
+      sprites[0].position = new Point(-3.0, 0.0);
+      sprites[1].position = new Point(3.0, 0.0);
+    } else if (numLasers == 3) {
+      sprites[0].position = new Point(-4.0, 0.0);
+      sprites[1].position = new Point(4.0, 0.0);
+      sprites[2].position = new Point(0.0, -2.0);
+    }
   }
 
-  Sprite _sprt;
   Offset _offset;
 
   void move() {
     position += _offset;
+  }
+
+  Explosion createExplosion() {
+    return new ExplosionMini(f.sheet);
   }
 }
 
@@ -329,8 +375,6 @@ class EnemyDestroyer extends Obstacle {
   void update(double dt) {
     _countDown -= 1;
     if (_countDown <= 0) {
-      print("SHOOT!!");
-
       // Shoot at player
       EnemyLaser laser = new EnemyLaser(f, rotation, 5.0, new Color(0xffffe38e));
       laser.position = position;
@@ -361,8 +405,6 @@ class EnemyLaser extends Obstacle {
 
     double rad = radians(rotation);
     _movement = new Offset(math.cos(rad) * speed, math.sin(rad) * speed);
-
-    print("LASER!!");
   }
 
   Sprite _sprt;
@@ -370,6 +412,76 @@ class EnemyLaser extends Obstacle {
 
   void move() {
     position += _movement;
+  }
+}
+
+class EnemyBoss extends Obstacle {
+  EnemyBoss(GameObjectFactory f) : super(f) {
+    radius = 48.0;
+    _sprt = new Sprite(f.sheet["enemy_destroyer_1.png"]);
+    _sprt.scale = 0.64;
+    addChild(_sprt);
+    maxDamage = 40.0;
+
+    constraints = [new ConstraintRotationToNode(f.level.ship, dampening: 0.05)];
+
+    _powerBar = new PowerBar(new Size(60.0, 10.0));
+    _powerBar.position = new Point(-80.0, 0.0);
+    _powerBar.pivot = new Point(0.5, 0.5);
+    addChild(_powerBar);
+  }
+
+  Sprite _sprt;
+  PowerBar _powerBar;
+
+  int _countDown = randomInt(120) + 240;
+
+  void update(double dt) {
+    _countDown -= 1;
+    if (_countDown <= 0) {
+      // Shoot at player
+      fire(10.0);
+      fire(0.0);
+      fire(-10.0);
+
+      _countDown = 60 + randomInt(120);
+    }
+
+    _powerBar.rotation = -rotation;
+  }
+
+  void fire(double r) {
+    r += rotation;
+    EnemyLaser laser = new EnemyLaser(f, r, 5.0, new Color(0xffffe38e));
+
+    double rad = radians(r);
+    Offset startOffset = new Offset(math.cos(rad) * 30.0, math.sin(rad) * 30.0);
+
+    laser.position = position + startOffset;
+    f.level.addChild(laser);
+  }
+
+  void setupActions() {
+    ActionOscillate oscillate = new ActionOscillate((a) => position = a, position, 120.0, 3.0);
+    actions.run(new ActionRepeatForever(oscillate));
+  }
+
+  void destroy() {
+    f.playerState.boss = null;
+    super.destroy();
+  }
+
+  set damage(double d) {
+    super.damage = d;
+    _sprt.actions.stopAll();
+    _sprt.actions.run(new ActionTween(
+      (a) =>_sprt.colorOverlay = a,
+      new Color.fromARGB(180, 255, 3, 86),
+      new Color(0x00000000),
+      0.3
+    ));
+
+    _powerBar.power = (1.0 - (damage / maxDamage)).clamp(0.0, 1.0);
   }
 }
 
@@ -414,6 +526,7 @@ enum PowerUpType {
   shield,
   speedLaser,
   sideLaser,
+  speedBoost,
 }
 
 List<PowerUpType> _powerUpTypes = new List.from(PowerUpType.values);

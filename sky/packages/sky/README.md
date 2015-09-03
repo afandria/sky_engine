@@ -4,7 +4,7 @@ Getting Started with Sky
 Sky apps are written in Dart. To get started, we need to set up Dart SDK:
 
  - Install the [Dart SDK](https://www.dartlang.org/downloads/):
-   - Mac: `brew tap dart-lang/dart && brew install dart`
+   - Mac: `brew tap dart-lang/dart && brew install dart --devel`
    - Linux: See [https://www.dartlang.org/downloads/linux.html](https://www.dartlang.org/downloads/linux.html)
  - Ensure that `$DART_SDK` is set to the path of your Dart SDK and that the
    `dart` and `pub` executables are on your `$PATH`.
@@ -57,6 +57,8 @@ of the Android operating system.
  - Install the `adb` tool from the [Android SDK](https://developer.android.com/sdk/installing/index.html?pkg=tools):
   - Mac: `brew install android-platform-tools`
   - Linux: `sudo apt-get install android-tools-adb`
+    - If the version of `adb` provided by your Linux distribution is too old,
+      you might need to [install the Android SDK manually](https://developer.android.com/sdk/installing/index.html?pkg=tools]).
 
  - Enable developer mode on your device by visiting `Settings > About phone`
    and tapping the `Build number` field five times.
@@ -72,21 +74,18 @@ Running a Sky application
 The `sky` pub package includes a `sky_tool` script to assist in running
 Sky applications inside the `SkyShell.apk` harness.  The `sky_tool` script
 expects to be run from the root directory of your application's package (i.e.,
-the same directory that contains the `pubspec.yaml` file). To run your app,
-follow these instructions:
+the same directory that contains the `pubspec.yaml` file).
 
- - The first time: `./packages/sky/sky_tool start --install --checked && adb logcat -s sky chromium`
- - Subsequent times: `./packages/sky/sky_tool start --checked && adb logcat -s sky chromium`
+To run your app with logging, run this command:
+ - `./packages/sky/sky_tool start --checked && ./packages/sky/sky_tool logs`
 
-The `sky_tool start` command starts the dev server and uploads your app to the device.
-The `--install` flag installs `SkyShell.apk` if it is not already installed on the device.
+The `sky_tool start` command starts the dev server and uploads your app to the device, installing `SkyShell.apk` if needed.
 The `--checked` flag triggers checked mode, in which types are checked, asserts are run, and
-various [debugging features](lib/base/debug.dart) are enabled.
-The `adb logcat` command logs errors and Dart `print()` output from the app. The `-s sky chromium`
-argument limits the output to just output from Sky Dart code and the Sky Engine C++ code (which
+various [debugging features](https://github.com/domokit/sky_engine/blob/master/sky/packages/sky/lib/base/debug.dart) are enabled.
+The `sky_tool logs` command logs errors and Dart `print()` output from the app, automatically limiting the output to just output from Sky Dart code and the Sky Engine C++ code (which
 for historical reasons currently uses the tag `chromium`.)
 
-To avoid confusion from old log messages, you may wish to run `adb logcat -c` before calling
+To avoid confusion from old log messages, you may wish to call `sky_tool logs --clear` before calling
 `sky_tool start`, to clear the log between runs.
 
 Rapid Iteration

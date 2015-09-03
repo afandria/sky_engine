@@ -4,37 +4,44 @@
 
 import 'dart:sky' as sky;
 
-import 'package:sky/base/hit_test.dart';
+/// A callback that receives a [sky.PointerEvent]
+typedef void PointerRoute(sky.PointerEvent event);
 
-typedef void _Route(sky.PointerEvent event);
+/// A routing table for [sky.PointerEvent] events.
+class PointerRouter {
+  final Map<int, List<PointerRoute>> _routeMap = new Map<int, List<PointerRoute>>();
 
-class PointerRouter extends HitTestTarget {
-  final Map<int, List<_Route>> _routeMap = new Map<int, List<_Route>>();
-
-  void addRoute(int pointer, _Route route) {
-    List<_Route> routes = _routeMap.putIfAbsent(pointer, () => new List<_Route>());
+  /// Adds a route to the routing table
+  ///
+  /// Whenever this object routes a [sky.PointerEvent] corresponding to
+  /// pointer, call route.
+  void addRoute(int pointer, PointerRoute route) {
+    List<PointerRoute> routes = _routeMap.putIfAbsent(pointer, () => new List<PointerRoute>());
     assert(!routes.contains(route));
     routes.add(route);
   }
 
-  void removeRoute(int pointer, _Route route) {
+  /// Removes a route from the routing table
+  ///
+  /// No longer call route when routing a [sky.PointerEvent] corresponding to
+  /// pointer. Requires that this route was previously added to the router.
+  void removeRoute(int pointer, PointerRoute route) {
     assert(_routeMap.containsKey(pointer));
-    List<_Route> routes = _routeMap[pointer];
+    List<PointerRoute> routes = _routeMap[pointer];
     assert(routes.contains(route));
     routes.remove(route);
     if (routes.isEmpty)
       _routeMap.remove(pointer);
   }
 
-  EventDisposition handleEvent(sky.Event e, HitTestEntry entry) {
-    if (e is! sky.PointerEvent)
-      return EventDisposition.ignored;
-    sky.PointerEvent event = e;
-    List<_Route> routes = _routeMap[event.pointer];
+  /// Call the routes registed for this pointer event.
+  ///
+  /// Calls the routes in the order in which they were added to the route.
+  void route(sky.PointerEvent event) {
+    List<PointerRoute> routes = _routeMap[event.pointer];
     if (routes == null)
-      return EventDisposition.ignored;
-    for (_Route route in new List<_Route>.from(routes))
+      return;
+    for (PointerRoute route in new List<PointerRoute>.from(routes))
       route(event);
-    return EventDisposition.processed;
   }
 }

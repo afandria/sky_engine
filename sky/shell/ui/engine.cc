@@ -12,6 +12,7 @@
 #include "mojo/data_pipe_utils/data_pipe_utils.h"
 #include "mojo/public/cpp/application/connect.h"
 #include "services/asset_bundle/asset_unpacker_job.h"
+#include "sky/shell/gpu/picture_serializer.h"
 #include "sky/engine/public/platform/WebInputEvent.h"
 #include "sky/engine/public/platform/sky_display_metrics.h"
 #include "sky/engine/public/platform/sky_display_metrics.h"
@@ -68,7 +69,7 @@ Engine::Engine(const Config& config)
       CreateServiceProvider(config.service_provider_context);
   mojo::ConnectToService(service_provider.get(), &network_service_);
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_IOS)
   // TODO(abarth): Implement VSyncProvider on other platforms.
   vsync::VSyncProviderPtr vsync_provider;
   mojo::ConnectToService(service_provider.get(), &vsync_provider);
@@ -268,6 +269,11 @@ void Engine::StartDartTracing() {
 
 void Engine::StopDartTracing(mojo::ScopedDataPipeProducerHandle producer) {
   sky_view_->StopDartTracing(producer.Pass());
+}
+
+void Engine::SaveFrameToSkPicture(const base::FilePath& destination) {
+  PassRefPtr<SkPicture> picture = Paint();
+  SerializePicture(destination.AsUTF8Unsafe().c_str(), picture.get());
 }
 
 }  // namespace shell

@@ -73,6 +73,8 @@ The test should have a `main` function and use `package:test`.
 Running the examples
 --------------------
 
+* Before running the examples, you'll need to set up your path to include the Dart SDK directory, like so (starting in the src directory of your code tree):
+ - ``$ export PATH=$PATH:`pwd`/third_party/dark-sdk/dart-sdk/bin``
 * You can find example code in subdirectories of the `examples` directory, for example `examples/stocks`.
 * Once you have a local build, run `pub get` from the example folder of your choice to make sure that you have all of the Dart dependencies.
 * Then, to run the current example locally, you can run:
@@ -82,17 +84,24 @@ Running the examples
  - `$ ./packages/sky/sky_tool --local-build start tabs.dart`
 * When running code from the `examples` directory, any changes you make to the example code, as well as any changes to Dart code in the `sky` directory and subdirectories will automatically be picked when you relaunch the app.  You can do the same for your own code by mimicking the `pubspec.yaml` files in the `examples` subdirectories.
 * You can also use `$ ./packages/sky/sky_tool --local-build listen` in the various example directories (or your own Sky apps) to listen for changes you are making to the app and automatically update the running SkyShell instance on your Android device.  iOS device and simulator support are coming soon.
+* You can replace `--local-build` in any of the above commands with `--release` if you have made release builds and want to test with them.  E.g., `$ ./packages/sky/sky_tool --release start` will attempt to use your release build of the Android SkyShell.apk.
+* If you just need to install SkyShell on a device, you can run `$ ./packages/sky/sky_tool --local-build install`.
 
 Contributing code
 -----------------
 
-The Sky engine repository gladly accepts contributions via GitHub pull requests:
+The Sky engine repository gladly accepts contributions via GitHub pull requests.
+
+To start working on a patch:
 
  * `git fetch upstream`
  * `git checkout upstream/master -b name_of_your_branch`
  * Hack away
  * `git commit -a`
  * `git push origin name_of_your_branch`
+
+To send us a pull request:
+
  * `git pull-request` (if you are using [Hub](http://github.com/github/hub/)) or go to `https://github.com/<your_name_here>/sky_engine` and click the
    "Compare & pull request" button
 
